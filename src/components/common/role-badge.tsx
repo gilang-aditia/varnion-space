@@ -15,7 +15,16 @@ const SYS_STYLE: Record<SystemRole, { cls: string; icon: typeof Crown }> = {
   member: { cls: 'bg-muted text-muted-foreground', icon: UserIcon },
 }
 
-export function WorkspaceRoleBadge({ role, className }: { role: WorkspaceRole; className?: string }) {
+export function WorkspaceRoleBadge({
+  role,
+  icon = true,
+  className,
+}: {
+  role: WorkspaceRole
+  /** false → tanpa ikon (mis. di dalam chip yang sudah padat). */
+  icon?: boolean
+  className?: string
+}) {
   const { cls, icon: Icon } = WS_STYLE[role]
   return (
     <span
@@ -25,13 +34,22 @@ export function WorkspaceRoleBadge({ role, className }: { role: WorkspaceRole; c
         className,
       )}
     >
-      <Icon className="size-3" />
+      {icon && <Icon className="size-3" />}
       {WORKSPACE_ROLE_LABEL[role]}
     </span>
   )
 }
 
-export function SystemRoleBadge({ role, className }: { role: SystemRole; className?: string }) {
+export function SystemRoleBadge({
+  role,
+  icon = true,
+  className,
+}: {
+  role: SystemRole
+  /** false → tanpa ikon (mis. di dalam chip yang sudah padat). */
+  icon?: boolean
+  className?: string
+}) {
   const { cls, icon: Icon } = SYS_STYLE[role]
   return (
     <span
@@ -41,7 +59,7 @@ export function SystemRoleBadge({ role, className }: { role: SystemRole; classNa
         className,
       )}
     >
-      <Icon className="size-3" />
+      {icon && <Icon className="size-3" />}
       {SYSTEM_ROLE_LABEL[role]}
     </span>
   )

@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { ShieldCheck, UserMinus, UserPlus } from 'lucide-react'
 import { WORKSPACE_ROLE_DESC, WORKSPACE_ROLE_LABEL } from '@/lib/rbac'
 import { formatDate } from '@/lib/format'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
@@ -23,27 +22,25 @@ import { SystemRoleBadge, WorkspaceRoleBadge } from '@/components/common/role-ba
 
 const ROLES: WorkspaceRole[] = ['manager', 'editor', 'viewer']
 
+/** Pilihan peran: tombol hanya menampilkan nama peran, penjelasannya ada di daftar. */
 function RoleSelect({
   value,
   onChange,
-  disabled,
+  size = 'default',
 }: {
   value: WorkspaceRole
   onChange: (r: WorkspaceRole) => void
-  disabled?: boolean
+  size?: 'sm' | 'default'
 }) {
   return (
-    <Select value={value} onValueChange={(v) => onChange(v as WorkspaceRole)} disabled={disabled}>
-      <SelectTrigger size="sm" className="w-32">
+    <Select value={value} onValueChange={(v) => onChange(v as WorkspaceRole)}>
+      <SelectTrigger size={size} className="w-32 shrink-0" aria-label="Peran">
         <SelectValue />
       </SelectTrigger>
-      <SelectContent position="popper" align="end">
+      <SelectContent position="popper" align="end" className="w-80">
         {ROLES.map((r) => (
-          <SelectItem key={r} value={r}>
-            <div>
-              <p>{WORKSPACE_ROLE_LABEL[r]}</p>
-              <p className="text-[11px] text-muted-foreground">{WORKSPACE_ROLE_DESC[r]}</p>
-            </div>
+          <SelectItem key={r} value={r} description={WORKSPACE_ROLE_DESC[r]}>
+            {WORKSPACE_ROLE_LABEL[r]}
           </SelectItem>
         ))}
       </SelectContent>
@@ -90,7 +87,7 @@ export function MembersDialog({ workspaceId }: { workspaceId: string }) {
         {canManage && (
           <div className="flex flex-col gap-2 rounded-xl border bg-muted/30 p-3 sm:flex-row sm:items-center">
             <Select value={newUser} onValueChange={setNewUser}>
-              <SelectTrigger className="w-full flex-1">
+              <SelectTrigger className="w-full min-w-0 flex-1" aria-label="Pengguna">
                 <SelectValue placeholder="Pilih pengguna…" />
               </SelectTrigger>
               <SelectContent position="popper">
@@ -98,10 +95,8 @@ export function MembersDialog({ workspaceId }: { workspaceId: string }) {
                   <p className="px-2 py-1.5 text-xs text-muted-foreground">Semua pengguna aktif sudah menjadi anggota.</p>
                 )}
                 {candidates.map((u) => (
-                  <SelectItem key={u.id} value={u.id}>
-                    <UserAvatar user={u} size="xs" />
+                  <SelectItem key={u.id} value={u.id} description={u.email}>
                     {u.name}
-                    <span className="text-xs text-muted-foreground">{u.email}</span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -114,9 +109,7 @@ export function MembersDialog({ workspaceId }: { workspaceId: string }) {
                   void dispatch(addMember({ workspaceId, userId: newUser, role: newRole }))
                   setNewUser('')
                 }}
-                className="gap-1.5"
               >
-                <UserPlus className="size-4" />
                 Tambah
               </Button>
             </div>
@@ -129,7 +122,7 @@ export function MembersDialog({ workspaceId }: { workspaceId: string }) {
             if (!u) return null
             return (
               <li key={m.userId} className="flex items-center gap-3 px-1 py-2.5">
-                <UserAvatar user={u} size="md" showStatus />
+                <UserAvatar user={u} size="md" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">
                     {u.name}
@@ -143,20 +136,24 @@ export function MembersDialog({ workspaceId }: { workspaceId: string }) {
                   </p>
                 </div>
                 {canManage ? (
-                  <>
-                    <RoleSelect value={m.role} onChange={(role) => void dispatch(changeMemberRole({ workspaceId, userId: u.id, role }))} />
+                  <div className="flex shrink-0 items-center gap-1">
+                    <RoleSelect
+                      size="sm"
+                      value={m.role}
+                      onChange={(role) => void dispatch(changeMemberRole({ workspaceId, userId: u.id, role }))}
+                    />
                     <Button
                       variant="ghost"
-                      size="icon-sm"
-                      className="text-muted-foreground hover:text-destructive"
+                      size="sm"
+                      className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                       onClick={() => void dispatch(removeMember({ workspaceId, userId: u.id }))}
                       aria-label={`Keluarkan ${u.name}`}
                     >
-                      <UserMinus />
+                      Keluarkan
                     </Button>
-                  </>
+                  </div>
                 ) : (
-                  <WorkspaceRoleBadge role={m.role} />
+                  <WorkspaceRoleBadge role={m.role} icon={false} />
                 )}
               </li>
             )
@@ -165,16 +162,19 @@ export function MembersDialog({ workspaceId }: { workspaceId: string }) {
 
         {implicit.length > 0 && (
           <div className="rounded-lg bg-muted/40 p-3">
-            <p className="mb-2 flex items-center gap-1.5 text-xs font-medium">
-              <ShieldCheck className="size-3.5 text-primary" />
-              Akses otomatis dari peran sistem
+            <p className="text-xs font-medium">Akses otomatis dari peran sistem</p>
+            <p className="mt-0.5 mb-2.5 text-xs text-muted-foreground">
+              Tidak perlu ditambahkan sebagai anggota — akses mengikuti peran sistemnya.
             </p>
             <div className="flex flex-wrap gap-2">
               {implicit.map((u) => (
-                <span key={u.id} className="inline-flex items-center gap-1.5 rounded-full border bg-background py-0.5 pr-1 pl-0.5 text-xs">
+                <span
+                  key={u.id}
+                  className="inline-flex items-center gap-2 rounded-full border bg-background py-1 pr-1.5 pl-1 text-xs"
+                >
                   <UserAvatar user={u} size="xs" />
-                  {u.name}
-                  <SystemRoleBadge role={u.role} />
+                  <span className="font-medium">{u.name}</span>
+                  <SystemRoleBadge role={u.role} icon={false} />
                 </span>
               ))}
             </div>

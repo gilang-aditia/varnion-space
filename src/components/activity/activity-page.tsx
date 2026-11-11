@@ -296,7 +296,6 @@ export function ActivityPage() {
                 <SelectItem value="all">Semua pengguna</SelectItem>
                 {users.map((u) => (
                   <SelectItem key={u.id} value={u.id}>
-                    <UserAvatar user={u} size="xs" />
                     {u.name}
                   </SelectItem>
                 ))}

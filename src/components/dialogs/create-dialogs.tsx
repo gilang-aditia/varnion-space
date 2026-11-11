@@ -186,11 +186,8 @@ export function NewUserDialog() {
                 </SelectTrigger>
                 <SelectContent position="popper">
                   {(Object.keys(SYSTEM_ROLE_LABEL) as SystemRole[]).map((r) => (
-                    <SelectItem key={r} value={r}>
-                      <div>
-                        <p>{SYSTEM_ROLE_LABEL[r]}</p>
-                        <p className="text-[11px] text-muted-foreground">{SYSTEM_ROLE_DESC[r]}</p>
-                      </div>
+                    <SelectItem key={r} value={r} description={SYSTEM_ROLE_DESC[r]}>
+                      {SYSTEM_ROLE_LABEL[r]}
                     </SelectItem>
                   ))}
                 </SelectContent>
