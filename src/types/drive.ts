@@ -55,6 +55,65 @@ export interface WorkspaceMember {
   addedAt: string
 }
 
+/**
+ * Izin pada sebuah folder/file. Nama field = flag ACL backend
+ * (`can_view`, `can_download`, … — dikonversi otomatis ke camelCase).
+ */
+export interface NodePermissions {
+  canView: boolean
+  canDownload: boolean
+  canEdit: boolean
+  canDelete: boolean
+  canShare: boolean
+}
+
+/**
+ * Satu aturan akses (ACL) pada folder/file, sesuai respons backend:
+ * `{ can_view, can_download, can_edit, can_delete, can_share,
+ *    subject_type, subject_user_id, subject_role_id }`.
+ */
+export interface AccessEntry extends NodePermissions {
+  /** `user` → berlaku untuk satu pengguna; `role` → untuk semua anggota dengan peran tsb. */
+  subjectType: 'user' | 'role'
+  subjectUserId: string | null
+  /** Peran akses: subjek (untuk `role`) atau preset yang dipakai (untuk `user`). */
+  subjectRoleId: string | null
+}
+
+/**
+ * Link publik ("siapa saja yang punya link") sebuah folder/file.
+ * `key` adalah access key dari backend → URL publik: `/#/s/<key>`.
+ */
+export interface ShareLink {
+  key: string
+  enabled: boolean
+  /** Pengunjung tanpa login selalu bisa melihat; unduh opsional. */
+  canDownload: boolean
+  /** null = tidak kedaluwarsa. */
+  expiresAt: string | null
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+}
+
+/** Node versi publik — hanya field yang aman dilihat tanpa login. */
+export type PublicNode = Pick<
+  DriveNode,
+  'id' | 'kind' | 'name' | 'parentId' | 'fileType' | 'size' | 'version' | 'createdAt' | 'updatedAt'
+>
+
+/** Isi halaman link publik (tanpa login). */
+export interface PublicShare {
+  key: string
+  permissions: { canView: boolean; canDownload: boolean }
+  expiresAt: string | null
+  /** Nama pembuat link (tanpa id / email). */
+  sharedBy: string
+  root: PublicNode
+  /** Seluruh isi folder (kosong untuk file). */
+  nodes: PublicNode[]
+}
+
 /** Satu versi file — mirip satu commit di GitLab. */
 export interface FileVersion {
   /** Hash pendek ala commit SHA, mis. "a1b2c3d4". */
@@ -84,6 +143,13 @@ export interface DriveNode {
   version?: number
   /** Riwayat versi, urut dari yang paling lama. */
   versions?: FileVersion[]
+  // --- akses per folder/file ---
+  /** Aturan akses khusus pada node ini; berlaku juga untuk isinya kecuali ditimpa. */
+  access?: AccessEntry[]
+  /** Izin efektif user yang sedang login — dihitung server. */
+  myPermissions?: NodePermissions
+  /** Link publik tanpa login (folder/file). */
+  shareLink?: ShareLink | null
   // --- workspace ---
   description?: string
   color?: WorkspaceColor
@@ -109,6 +175,7 @@ export type ActivityAction =
   | 'edit'
   | 'version_restore'
   | 'rename'
+  | 'move'
   | 'delete'
   | 'restore'
   | 'purge'
@@ -116,6 +183,11 @@ export type ActivityAction =
   | 'member_add'
   | 'member_role'
   | 'member_remove'
+  | 'access_grant'
+  | 'access_revoke'
+  | 'link_update'
+  | 'link_view'
+  | 'link_download'
   | 'user_create'
   | 'user_role'
   | 'user_status'
@@ -145,5 +217,7 @@ export interface ActivityLog {
     note?: string
     /** Nomor versi lama yang dipulihkan. */
     restoredFrom?: number
+    /** Pindah antar workspace: workspace asal (log juga terlihat oleh anggotanya). */
+    fromWorkspaceId?: string
   }
 }

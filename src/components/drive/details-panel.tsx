@@ -9,7 +9,7 @@ import {
   formatDayGroup,
   formatWhen,
 } from "@/lib/format";
-import { getWorkspaceRole } from "@/lib/rbac";
+import { describePermissions, getWorkspaceRole, nodePermissions } from "@/lib/rbac";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   getPath,
@@ -23,7 +23,7 @@ import { useCurrentUser, useNow } from "@/hooks/use-drive";
 import type { ActivityLog, DriveNode, User } from "@/types/drive";
 import { NodeIcon } from "@/components/common/node-icon";
 import { UserAvatar } from "@/components/common/user-avatar";
-import { WorkspaceRoleBadge } from "@/components/common/role-badge";
+import { AccessBadge, WorkspaceRoleBadge } from "@/components/common/role-badge";
 import { ActivityItem } from "@/components/activity/activity-item";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -144,10 +144,51 @@ function NodeDetails({ node, now }: { node: DriveNode; now: number }) {
         </p>
       )}
 
-      <div className="flex items-center justify-between rounded-lg border px-3 py-2">
-        <span className="text-xs text-muted-foreground">Akses Anda</span>
-        {role && <WorkspaceRoleBadge role={role} />}
-      </div>
+      {node.kind === "workspace" ? (
+        <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+          <span className="text-xs text-muted-foreground">Peran Anda</span>
+          {role && <WorkspaceRoleBadge role={role} />}
+        </div>
+      ) : (
+        <div className="rounded-lg border px-3 py-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-muted-foreground">Akses Anda</span>
+            <AccessBadge permissions={nodePermissions(node)} />
+          </div>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Boleh {describePermissions(nodePermissions(node))}.
+          </p>
+          <div className="mt-2 flex items-center justify-between border-t pt-2">
+            <span className="text-xs text-muted-foreground">
+              {node.access?.length
+                ? `${node.access.length} aturan akses khusus`
+                : "Mengikuti peran workspace"}
+            </span>
+            <div className="flex gap-1">
+              {nodePermissions(node).canShare && (
+                <Button
+                  variant="ghost"
+                  size="xs"
+                  onClick={() =>
+                    dispatch(uiActions.openDialog({ type: "share", id: node.id }))
+                  }
+                >
+                  Bagikan
+                </Button>
+              )}
+              <Button
+                variant="ghost"
+                size="xs"
+                onClick={() =>
+                  dispatch(uiActions.openDialog({ type: "access", id: node.id }))
+                }
+              >
+                {nodePermissions(node).canShare ? "Kelola akses" : "Lihat akses"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section>
         <h4 className="mb-1 text-xs font-semibold">Informasi</h4>

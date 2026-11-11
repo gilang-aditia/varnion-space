@@ -5,10 +5,13 @@ import {
   Download,
   FileClock,
   FilePen,
+  FolderInput,
   GitCommitVertical,
   LoaderCircle,
   Lock,
   PencilLine,
+  Share2,
+  UserCog,
   Trash,
   Undo2,
 } from "lucide-react";
@@ -19,7 +22,9 @@ import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { getPath, selectLogs } from "@/store/selectors";
 import { uiActions, type PreviewTab } from "@/store/slices/uiSlice";
 import { downloadNode, recordOpen, restoreVersion } from "@/store/thunks";
-import { useNow, usePermissions } from "@/hooks/use-drive";
+import { useNow } from "@/hooks/use-drive";
+import { nodePermissions } from "@/lib/rbac";
+import { isShareLinkActive } from "@/lib/share-link";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -35,7 +40,7 @@ import {
 } from "@/components/ui/tooltip";
 import { NodeIcon } from "@/components/common/node-icon";
 import { UserAvatar } from "@/components/common/user-avatar";
-import { WorkspaceRoleBadge } from "@/components/common/role-badge";
+import { AccessBadge } from "@/components/common/role-badge";
 import { FileThumb } from "@/components/drive/node-views";
 import { GroupedLogs } from "@/components/drive/details-panel";
 import {
@@ -98,7 +103,7 @@ export function PreviewDialog({
   const nodes = useAppSelector((s) => s.drive.nodes);
   const users = useAppSelector((s) => s.users.byId);
   const logs = useAppSelector(selectLogs);
-  const perms = usePermissions(node?.workspaceId);
+  const access = nodePermissions(node); // izin efektif pada file ini (ACL)
   const upload = useUpload();
 
   const [tab, setTab] = useState<PreviewTab>(initialTab);
@@ -158,12 +163,7 @@ export function PreviewDialog({
               {path.map((p) => p.name).join(" › ")}
             </DialogDescription>
           </div>
-          {perms.role && (
-            <WorkspaceRoleBadge
-              role={perms.role}
-              className="hidden sm:inline-flex"
-            />
-          )}
+          <AccessBadge permissions={access} className="hidden sm:inline-flex" />
         </div>
 
         <div className="grid min-h-0 md:grid-cols-[1fr_360px]">
@@ -299,7 +299,7 @@ export function PreviewDialog({
               ) : (
                 <div className="flex flex-wrap justify-center gap-2">
                   <GatedButton
-                    allowed={perms.can("file.download")}
+                    allowed={access.canDownload}
                     label={`Unduh v${active.version}`}
                     icon={Download}
                     onClick={() =>
@@ -309,7 +309,7 @@ export function PreviewDialog({
                     }
                   />
                   <GatedButton
-                    allowed={perms.can("file.edit")}
+                    allowed={access.canEdit}
                     label="Pulihkan versi ini"
                     icon={Undo2}
                     variant="default"
@@ -320,20 +320,36 @@ export function PreviewDialog({
             ) : (
               <div className="flex flex-wrap justify-center gap-2">
                 <GatedButton
-                  allowed={perms.can("file.download")}
+                  allowed={access.canDownload}
                   label="Unduh"
                   icon={Download}
                   variant="default"
                   onClick={() => void dispatch(downloadNode({ id }))}
                 />
                 <GatedButton
-                  allowed={perms.can("file.edit")}
+                  allowed={access.canShare || isShareLinkActive(node.shareLink)}
+                  label="Bagikan"
+                  icon={Share2}
+                  onClick={() =>
+                    dispatch(uiActions.openDialog({ type: "share", id }))
+                  }
+                />
+                <GatedButton
+                  allowed
+                  label={access.canShare ? "Kelola akses" : "Lihat akses"}
+                  icon={UserCog}
+                  onClick={() =>
+                    dispatch(uiActions.openDialog({ type: "access", id }))
+                  }
+                />
+                <GatedButton
+                  allowed={access.canEdit}
                   label="Unggah versi baru"
                   icon={FilePen}
                   onClick={() => upload.pickVersion(id)}
                 />
                 <GatedButton
-                  allowed={perms.can("file.edit")}
+                  allowed={access.canEdit}
                   label="Ganti nama"
                   icon={PencilLine}
                   onClick={() =>
@@ -341,7 +357,15 @@ export function PreviewDialog({
                   }
                 />
                 <GatedButton
-                  allowed={perms.can("file.delete")}
+                  allowed={access.canEdit}
+                  label="Pindahkan"
+                  icon={FolderInput}
+                  onClick={() =>
+                    dispatch(uiActions.openDialog({ type: "move", id }))
+                  }
+                />
+                <GatedButton
+                  allowed={access.canDelete}
                   label="Hapus"
                   icon={Trash}
                   variant="destructive"

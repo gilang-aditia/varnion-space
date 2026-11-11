@@ -9,11 +9,15 @@ export {
   createFolder,
   uploadFiles,
   renameNode,
+  moveNode,
   trashNode,
   restoreNode,
   purgeNode,
   downloadNode,
   uploadVersion,
   restoreVersion,
+  refreshNodeAccess,
+  updateNodeAccess,
+  updateShareLink,
 } from './drive'
 export { createWorkspace, addMember, changeMemberRole, removeMember, createUser, updateUser } from './admin'

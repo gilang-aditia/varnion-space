@@ -1,7 +1,7 @@
 import { createSelector } from '@reduxjs/toolkit'
 import type { RootState } from './index'
 import type { DriveNode } from '@/types/drive'
-import { canAccessWorkspace } from '@/lib/rbac'
+import { canAccessWorkspace, nodePermissions } from '@/lib/rbac'
 
 export const selectNodes = (s: RootState) => s.drive.nodes
 export const selectUsersById = (s: RootState) => s.users.byId
@@ -77,6 +77,23 @@ export function getSubtreeIds(index: Record<string, DriveNode[]>, id: string): S
   return out
 }
 
+/**
+ * Alasan sebuah node TIDAK bisa dipindah ke `targetId` (null = boleh).
+ * Dipakai dialog "Pindahkan" & drag-and-drop; server tetap memvalidasi ulang.
+ */
+export function getMoveBlocker(state: RootState, nodeId: string, targetId: string): string | null {
+  const nodes = state.drive.nodes
+  const node = nodes[nodeId]
+  const target = nodes[targetId]
+  if (!node || !target || node.kind === 'workspace') return 'Tidak dapat dipindahkan'
+  if (target.kind === 'file' || isInTrash(nodes, targetId)) return 'Bukan folder tujuan'
+  if (node.parentId === targetId) return 'Lokasi saat ini'
+  if (getSubtreeIds(selectChildrenIndex(state), nodeId).has(targetId)) return 'Folder yang dipindahkan'
+  if (!nodePermissions(node).canEdit) return 'Tidak punya izin memindahkan'
+  if (!nodePermissions(target).canEdit) return 'Hanya bisa melihat'
+  return null
+}
+
 /** Item di sampah (hanya akar penghapusan) pada workspace yang dapat diakses. */
 export const selectTrash = createSelector(
   [selectNodes, selectAccessibleWorkspaceIds],
@@ -105,6 +122,23 @@ export const selectWorkspaceStats = createSelector([selectNodes], (nodes) => {
   }
   return stats
 })
+
+/**
+ * "Dibagikan ke saya": item yang dibagikan langsung ke user (punya aturan
+ * akses untuknya) atau yang folder induknya tidak bisa ia lihat — mis. ia
+ * bukan anggota workspace-nya.
+ */
+export const selectSharedWithMe = createSelector([selectNodes, selectCurrentUser], (nodes, user) =>
+  Object.values(nodes)
+    .filter(
+      (n) =>
+        n.kind !== 'workspace' &&
+        !isInTrash(nodes, n.id) &&
+        ((n.parentId && !nodes[n.parentId]) ||
+          n.access?.some((e) => e.subjectType === 'user' && e.subjectUserId === user?.id && e.canView)),
+    )
+    .sort((a, b) => (a.kind !== b.kind ? (a.kind === 'file' ? 1 : -1) : a.name.localeCompare(b.name, 'id'))),
+)
 
 /** File/folder terbaru yang diubah di workspace yang dapat diakses. */
 export const selectRecent = createSelector(

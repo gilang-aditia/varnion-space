@@ -8,13 +8,15 @@ import {
   Info,
   LayoutGrid,
   List,
+  Share2,
+  UserCog,
   ShieldX,
   Upload,
   UserPlus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatRelative } from '@/lib/format'
-import { WORKSPACE_ROLE_DESC } from '@/lib/rbac'
+import { describePermissions, nodePermissions } from '@/lib/rbac'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { getPath, isInTrash, selectChildrenIndex } from '@/store/selectors'
 import { uiActions } from '@/store/slices/uiSlice'
@@ -22,7 +24,7 @@ import { navigate, uploadFiles } from '@/store/thunks'
 import { useCurrentUser, useNow, usePermissions } from '@/hooks/use-drive'
 import { NodeIcon } from '@/components/common/node-icon'
 import { UserAvatar } from '@/components/common/user-avatar'
-import { WorkspaceRoleBadge } from '@/components/common/role-badge'
+import { AccessBadge } from '@/components/common/role-badge'
 import { EmptyState } from '@/components/common/empty-state'
 import { Button } from '@/components/ui/button'
 import {
@@ -145,19 +147,20 @@ export function FolderView({ folderId }: { folderId: string }) {
       />
     )
   }
-  if (!perms.role) {
+  const access = nodePermissions(node) // izin efektif di folder ini (ACL)
+  if (!access.canView) {
     return (
       <EmptyState
         icon={ShieldX}
         title="Akses ditolak"
-        description={`Anda bukan anggota workspace "${ws?.name}". Minta Pengelola workspace untuk menambahkan Anda.`}
+        description="Anda tidak memiliki akses ke folder ini. Minta pemiliknya untuk membagikannya kepada Anda."
         action={<Button onClick={() => dispatch(navigate({ page: 'home' }))}>Kembali ke Semua Workspace</Button>}
         className="h-full"
       />
     )
   }
 
-  const canCreate = perms.can('file.create')
+  const canCreate = access.canEdit
   const folders = children.filter((c) => c.kind === 'folder').length
   const files = children.length - folders
 
@@ -215,6 +218,26 @@ export function FolderView({ folderId }: { folderId: string }) {
                 {perms.can('members.manage') && <UserPlus className="size-3.5 text-muted-foreground" />}
               </button>
             )}
+            {node.kind === 'folder' && access.canShare && (
+              <>
+                <Button
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => dispatch(uiActions.openDialog({ type: 'share', id: node.id }))}
+                >
+                  <Share2 className="size-4" />
+                  <span className="hidden md:inline">Bagikan</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="gap-1.5"
+                  onClick={() => dispatch(uiActions.openDialog({ type: 'access', id: node.id }))}
+                >
+                  <UserCog className="size-4" />
+                  <span className="hidden md:inline">Kelola akses</span>
+                </Button>
+              </>
+            )}
             {canCreate && (
               <>
                 <Button
@@ -236,8 +259,8 @@ export function FolderView({ folderId }: { folderId: string }) {
         <div className="mt-3 flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2 text-xs text-muted-foreground">
             <span className="shrink-0">Akses Anda:</span>
-            {perms.role && <WorkspaceRoleBadge role={perms.role} />}
-            <span className="hidden truncate md:inline">— {perms.role && WORKSPACE_ROLE_DESC[perms.role]}</span>
+            <AccessBadge permissions={access} />
+            <span className="hidden truncate md:inline">— {describePermissions(access)}</span>
           </div>
           <ViewToolbar />
         </div>
@@ -245,11 +268,10 @@ export function FolderView({ folderId }: { folderId: string }) {
 
       {/* ------------------------------ Content ----------------------------- */}
       <div key={node.id} className="flex-1 px-4 py-5 sm:px-6">
-        {perms.role === 'viewer' && (
+        {!access.canEdit && (
           <div className="mb-4 flex items-center gap-2 rounded-lg border border-dashed bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
             <Eye className="size-3.5 shrink-0" />
-            Anda memiliki akses <span className="font-medium text-foreground">Pelihat</span> — hanya dapat membuka dan
-            mengunduh. Tombol ubah & hapus dikunci.
+            Di folder ini Anda hanya dapat {describePermissions(access)}. Tombol ubah & hapus dikunci.
           </div>
         )}
         {children.length === 0 ? (

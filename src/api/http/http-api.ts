@@ -3,7 +3,7 @@
  * Daftar endpoint & bentuk payload: docs/backend-integration.md
  */
 import type { DriveApi } from '../contract'
-import type { ActivityLog, DriveNode, User } from '@/types/drive'
+import type { AccessEntry, ActivityLog, DriveNode, PublicShare, User } from '@/types/drive'
 import { createHttpClient } from './client'
 
 const enc = encodeURIComponent
@@ -36,11 +36,24 @@ export function createHttpApi(baseUrl: string): DriveApi {
       return http.postForm(`/nodes/${enc(parentId)}/files`, form)
     },
     renameNode: (id, name) => http.patch(`/nodes/${enc(id)}`, { name }),
+    moveNode: (id, parentId) => http.post(`/nodes/${enc(id)}/move`, { parentId }),
     trashNode: (id) => http.post(`/nodes/${enc(id)}/trash`),
     restoreNode: (id) => http.post(`/nodes/${enc(id)}/restore`),
     purgeNode: (id) => http.delete(`/nodes/${enc(id)}`),
     recordOpen: (id, version) => http.post(`/nodes/${enc(id)}/views`, { version }),
     getDownload: (id, version) => http.get(`/nodes/${enc(id)}/download`, { version }),
+
+    // Akses per folder/file (ACL) — JSON: { can_view, can_download, can_edit, can_delete, can_share,
+    //   subject_type, subject_user_id, subject_role_id }
+    getNodeAccess: (id) => http.get<AccessEntry[]>(`/nodes/${enc(id)}/access`),
+    updateNodeAccess: (id, entries) => http.put(`/nodes/${enc(id)}/access`, { entries }),
+    // { enabled, can_download, expires_at, regenerate } → node dengan share_link: { key, … }
+    updateShareLink: (id, input) => http.put(`/nodes/${enc(id)}/share-link`, input),
+
+    // Link publik — tanpa login
+    getPublicShare: (key) => http.get<PublicShare>(`/public/shares/${enc(key)}`),
+    getPublicDownload: (key, nodeId, version) =>
+      http.get(`/public/shares/${enc(key)}/download`, { node_id: nodeId, version }),
 
     // Versi file
     uploadVersion: (id, file, note) => {

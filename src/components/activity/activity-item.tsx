@@ -44,6 +44,9 @@ function TargetLink({ log }: { log: ActivityLog }) {
 
 /** Kalimat deskripsi aktivitas. */
 function ActivitySentence({ log, actorName }: { log: ActivityLog; actorName: ReactNode }) {
+  const fromWorkspace = useAppSelector((s) =>
+    log.meta?.fromWorkspaceId ? s.drive.nodes[log.meta.fromWorkspaceId]?.name : undefined,
+  )
   const m = log.meta ?? {}
   const kind = log.targetKind ? KIND_LABEL[log.targetKind] : 'item'
   const target = <TargetLink log={log} />
@@ -140,6 +143,26 @@ function ActivitySentence({ log, actorName }: { log: ActivityLog; actorName: Rea
         </>
       )
       break
+    case 'move':
+      body = (
+        <>
+          memindahkan {kind} {target}
+          {m.from && (
+            <>
+              {' '}
+              dari <Strong>{m.from}</Strong>
+            </>
+          )}{' '}
+          ke <Strong>{m.to}</Strong>
+          {m.fromWorkspaceId && (
+            <span className="text-muted-foreground">
+              {' '}
+              (antar workspace{fromWorkspace ? ` · dari ${fromWorkspace}` : ''})
+            </span>
+          )}
+        </>
+      )
+      break
     case 'delete':
       body = (
         <>
@@ -179,6 +202,39 @@ function ActivitySentence({ log, actorName }: { log: ActivityLog; actorName: Rea
       body = (
         <>
           mengeluarkan {subject} dari {target}
+        </>
+      )
+      break
+    case 'access_grant':
+      body = (
+        <>
+          mengatur akses {subject} pada {kind} {target}: <Strong>{m.to}</Strong>
+        </>
+      )
+      break
+    case 'link_update':
+      body = (
+        <>
+          mengatur link publik {kind} {target}: <Strong>{m.to}</Strong>
+        </>
+      )
+      break
+    case 'link_view':
+    case 'link_download': {
+      const verb = log.action === 'link_view' ? 'membuka' : 'mengunduh'
+      const rest = (
+        <>
+          {verb} {kind} {target} <span className="text-muted-foreground">lewat link publik</span>
+        </>
+      )
+      if (!log.actorId) return <>Pengunjung tanpa login {rest}</>
+      body = rest
+      break
+    }
+    case 'access_revoke':
+      body = (
+        <>
+          mencabut akses khusus {subject} pada {kind} {target}
         </>
       )
       break

@@ -8,6 +8,7 @@ export type Route =
   | { page: 'home' }
   | { page: 'folder'; id: string }
   | { page: 'recent' }
+  | { page: 'shared' }
   | { page: 'activity' }
   | { page: 'trash' }
   | { page: 'users' }
@@ -27,7 +28,8 @@ export function hashToRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, '')
   const [head, arg] = path.split('/')
   if (head === 'f' && arg) return { page: 'folder', id: decodeURIComponent(arg) }
-  if (head === 'recent' || head === 'activity' || head === 'trash' || head === 'users') return { page: head }
+  if (head === 'recent' || head === 'shared' || head === 'activity' || head === 'trash' || head === 'users')
+    return { page: head }
   return { page: 'home' }
 }
 
@@ -38,6 +40,13 @@ export const sameRoute = (a: Route, b: Route) => routeToHash(a) === routeToHash(
 export type DialogState =
   | { type: 'newFolder'; parentId: string }
   | { type: 'rename'; id: string }
+  /** `targetId` = tujuan yang sudah dipilih sebelumnya (kembali dari konfirmasi). */
+  | { type: 'move'; id: string; targetId?: string }
+  | { type: 'moveConfirm'; id: string; targetId: string; fromDialog?: boolean }
+  /** Kelola akses: orang/peran & izinnya. */
+  | { type: 'access'; id: string }
+  /** Bagikan: link publik (akses umum). */
+  | { type: 'share'; id: string }
   | { type: 'delete'; id: string }
   | { type: 'purge'; id: string }
   | { type: 'preview'; id: string; tab?: PreviewTab; version?: number }
@@ -99,6 +108,9 @@ const uiSlice = createSlice({
       state.selectedId = null
       state.mobileNavOpen = false
       for (const id of action.payload.expand ?? []) state.expanded[id] = true
+    },
+    expandPath(state, action: PayloadAction<string[]>) {
+      for (const id of action.payload) state.expanded[id] = true
     },
     toggleExpanded(state, action: PayloadAction<string>) {
       state.expanded[action.payload] = !state.expanded[action.payload]

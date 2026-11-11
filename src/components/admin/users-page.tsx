@@ -2,6 +2,10 @@ import { Check, Minus, ShieldX, UserPlus, Users } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatDateTime, formatRelative } from "@/lib/format";
 import {
+  defaultPermissions,
+  NODE_PERMISSION_DESC,
+  NODE_PERMISSION_LABEL,
+  NODE_PERMISSIONS,
   SYSTEM_PERMISSION_LABEL,
   SYSTEM_ROLE_DESC,
   SYSTEM_ROLE_LABEL,
@@ -236,7 +240,8 @@ function PermissionMatrix() {
         <div className="border-b px-4 py-3">
           <h3 className="text-sm font-semibold">Peran workspace</h3>
           <p className="text-xs text-muted-foreground">
-            Diberikan per workspace oleh Pengelola atau Administrator.
+            Diberikan per workspace oleh Pengelola atau Administrator. Izin folder & file adalah
+            default — bisa ditimpa per folder/file lewat menu “Kelola akses”.
           </p>
         </div>
         <table className="w-full text-sm">
@@ -253,6 +258,27 @@ function PermissionMatrix() {
             </tr>
           </thead>
           <tbody>
+            <tr className="border-b bg-muted/20">
+              <td colSpan={4} className="px-4 py-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                Folder & file (default)
+              </td>
+            </tr>
+            {NODE_PERMISSIONS.map((p) => (
+              <tr key={p} className="border-b">
+                <td className="px-4 py-2.5 text-xs">
+                  {NODE_PERMISSION_LABEL[p]}{" "}
+                  <span className="text-muted-foreground">— {NODE_PERMISSION_DESC[p]}</span>
+                </td>
+                {wsRoles.map((r) => (
+                  <Cell key={r} on={defaultPermissions(r)[p]} />
+                ))}
+              </tr>
+            ))}
+            <tr className="border-b bg-muted/20">
+              <td colSpan={4} className="px-4 py-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+                Workspace
+              </td>
+            </tr>
             {(
               Object.keys(WORKSPACE_PERMISSION_LABEL) as WorkspacePermission[]
             ).map((p) => (

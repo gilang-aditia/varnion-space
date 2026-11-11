@@ -4,10 +4,13 @@ import {
   EllipsisVertical,
   ExternalLink,
   FilePen,
+  FolderInput,
   GitCommitVertical,
   Info,
   Lock,
   PencilLine,
+  Share2,
+  UserCog,
   Trash,
   Users,
 } from 'lucide-react'
@@ -15,6 +18,8 @@ import { cn } from '@/lib/utils'
 import { useAppDispatch } from '@/store/hooks'
 import { uiActions } from '@/store/slices/uiSlice'
 import { downloadNode, openNode } from '@/store/thunks'
+import { nodePermissions } from '@/lib/rbac'
+import { isShareLinkActive } from '@/lib/share-link'
 import { usePermissions } from '@/hooks/use-drive'
 import type { DriveNode } from '@/types/drive'
 import {
@@ -31,9 +36,9 @@ function Locked({ allowed }: { allowed: boolean }) {
 }
 
 /**
- * Menu aksi (⋮) untuk sebuah item. Aksi yang tidak diizinkan oleh peran
- * user tetap ditampilkan namun non-aktif dengan ikon gembok — agar jelas
- * bahwa pembatasnya adalah hak akses (RBAC).
+ * Menu aksi (⋮) untuk sebuah item. Aksi yang tidak diizinkan oleh akses user
+ * pada item ini tetap ditampilkan namun non-aktif dengan ikon gembok — agar
+ * jelas bahwa pembatasnya adalah hak akses.
  */
 export function NodeMenu({
   node,
@@ -45,10 +50,13 @@ export function NodeMenu({
   trigger?: ReactNode
 }) {
   const dispatch = useAppDispatch()
-  const perms = usePermissions(node.workspaceId)
+  const ws = usePermissions(node.workspaceId) // izin level workspace (anggota)
+  const access = nodePermissions(node) // izin pada item ini (ACL)
   const upload = useUpload()
   const isWs = node.kind === 'workspace'
-  const canRename = isWs ? perms.can('members.manage') : perms.can('file.edit')
+  const canRename = isWs ? ws.can('members.manage') : access.canEdit
+  // tanpa izin "Bagikan", dialog Bagikan tetap bisa dibuka untuk menyalin link publik yang aktif
+  const canOpenShare = access.canShare || isShareLinkActive(node.shareLink)
 
   return (
     <DropdownMenu>
@@ -73,17 +81,33 @@ export function NodeMenu({
           <ExternalLink />
           Buka
         </DropdownMenuItem>
+        {!isWs && (
+          <DropdownMenuItem
+            disabled={!canOpenShare}
+            onSelect={() => dispatch(uiActions.openDialog({ type: 'share', id: node.id }))}
+          >
+            <Share2 />
+            Bagikan…
+            <Locked allowed={canOpenShare} />
+          </DropdownMenuItem>
+        )}
+        {!isWs && (
+          <DropdownMenuItem onSelect={() => dispatch(uiActions.openDialog({ type: 'access', id: node.id }))}>
+            <UserCog />
+            {access.canShare ? 'Kelola akses…' : 'Lihat akses'}
+          </DropdownMenuItem>
+        )}
         {node.kind === 'file' && (
-          <DropdownMenuItem disabled={!perms.can('file.download')} onSelect={() => dispatch(downloadNode({ id: node.id }))}>
+          <DropdownMenuItem disabled={!access.canDownload} onSelect={() => dispatch(downloadNode({ id: node.id }))}>
             <Download />
             Unduh
-            <Locked allowed={perms.can('file.download')} />
+            <Locked allowed={access.canDownload} />
           </DropdownMenuItem>
         )}
         {isWs && (
           <DropdownMenuItem onSelect={() => dispatch(uiActions.openDialog({ type: 'members', workspaceId: node.id }))}>
             <Users />
-            {perms.can('members.manage') ? 'Kelola anggota' : 'Lihat anggota'}
+            {ws.can('members.manage') ? 'Kelola anggota' : 'Lihat anggota'}
           </DropdownMenuItem>
         )}
         <DropdownMenuItem
@@ -104,10 +128,20 @@ export function NodeMenu({
           </DropdownMenuItem>
         )}
         {node.kind === 'file' && (
-          <DropdownMenuItem disabled={!perms.can('file.edit')} onSelect={() => upload.pickVersion(node.id)}>
+          <DropdownMenuItem disabled={!access.canEdit} onSelect={() => upload.pickVersion(node.id)}>
             <FilePen />
             Unggah versi baru
-            <Locked allowed={perms.can('file.edit')} />
+            <Locked allowed={access.canEdit} />
+          </DropdownMenuItem>
+        )}
+        {!isWs && (
+          <DropdownMenuItem
+            disabled={!access.canEdit}
+            onSelect={() => dispatch(uiActions.openDialog({ type: 'move', id: node.id }))}
+          >
+            <FolderInput />
+            Pindahkan…
+            <Locked allowed={access.canEdit} />
           </DropdownMenuItem>
         )}
         <DropdownMenuItem onSelect={() => dispatch(uiActions.showDetails(node.id))}>
@@ -119,12 +153,12 @@ export function NodeMenu({
             <DropdownMenuSeparator />
             <DropdownMenuItem
               variant="destructive"
-              disabled={!perms.can('file.delete')}
+              disabled={!access.canDelete}
               onSelect={() => dispatch(uiActions.openDialog({ type: 'delete', id: node.id }))}
             >
               <Trash />
               Pindahkan ke Sampah
-              <Locked allowed={perms.can('file.delete')} />
+              <Locked allowed={access.canDelete} />
             </DropdownMenuItem>
           </>
         )}

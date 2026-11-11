@@ -10,6 +10,7 @@ import {
   Plus,
   Trash,
   Upload,
+  UserRoundCheck,
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -17,6 +18,7 @@ import { formatBytes } from "@/lib/format";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   selectRoute,
+  selectSharedWithMe,
   selectTrash,
   selectWorkspaceStats,
   selectAccessibleWorkspaces,
@@ -24,6 +26,7 @@ import {
 import { uiActions, type Route } from "@/store/slices/uiSlice";
 import { navigate } from "@/store/thunks";
 import { usePermissions } from "@/hooks/use-drive";
+import { nodePermissions } from "@/lib/rbac";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import {
@@ -85,7 +88,7 @@ function NewButton() {
   );
   const perms = usePermissions(currentNode?.workspaceId);
   const upload = useUpload();
-  const canCreate = !!currentNode && perms.can("file.create");
+  const canCreate = !!currentNode && nodePermissions(currentNode).canEdit;
   const canCreateWs = perms.canSystem("workspace.create");
 
   return (
@@ -148,7 +151,7 @@ function NewButton() {
         )}
         {currentNode && !canCreate && (
           <p className="px-2 pt-1 pb-1.5 text-[11px] text-muted-foreground">
-            Peran Anda di workspace ini hanya Pelihat.
+            Anda tidak punya izin edit di lokasi ini.
           </p>
         )}
       </DropdownMenuContent>
@@ -163,6 +166,7 @@ export function SidebarContent({
 }) {
   const route = useAppSelector(selectRoute);
   const trash = useAppSelector(selectTrash);
+  const shared = useAppSelector(selectSharedWithMe);
   const stats = useAppSelector(selectWorkspaceStats);
   const workspaces = useAppSelector(selectAccessibleWorkspaces);
   const perms = usePermissions();
@@ -185,6 +189,12 @@ export function SidebarContent({
           route={{ page: "home" }}
         />
         <NavItem icon={Clock} label="Terbaru" route={{ page: "recent" }} />
+        <NavItem
+          icon={UserRoundCheck}
+          label="Dibagikan ke saya"
+          route={{ page: "shared" }}
+          badge={shared.length}
+        />
         <NavItem
           icon={Activity}
           label="Log Aktivitas"

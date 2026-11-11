@@ -11,10 +11,26 @@ import { getAuthToken } from '../token'
 import { loadDb, resetDb, saveDb } from './database'
 import { INITIAL_VERSION_NOTE, newVersionId } from './versions'
 import type { MockDb, UserRecord } from './types'
-import { can, canAccessWorkspace, canSeeLog, canSystem, type WorkspacePermission } from '@/lib/rbac'
+import {
+  accessLabel,
+  accessRoleById,
+  can,
+  canAccessWorkspace,
+  canSeeLog,
+  canSystem,
+  describePermissions,
+  isNodeVisible,
+  matchAccessRole,
+  NODE_PERMISSIONS,
+  normalizePermissions,
+  resolveNodePermissions,
+  type NodePermission,
+  type WorkspacePermission,
+} from '@/lib/rbac'
 import { fileTypeFromName } from '@/lib/file-types'
-import { isValidEmail, validateName } from '@/lib/validation'
-import type { ActivityLog, AvatarColor, DriveNode, FileVersion, User } from '@/types/drive'
+import { isShareLinkActive, shareLinkSummary } from '@/lib/share-link'
+import { isValidEmail, uniqueName as pickUniqueName, validateName } from '@/lib/validation'
+import type { AccessEntry, ActivityLog, AvatarColor, DriveNode, FileVersion, PublicNode, User } from '@/types/drive'
 
 const MINUTE = 60_000
 const MAX_LOGS = 3000
@@ -50,6 +66,14 @@ export function createMockApi({ latencyMs = 200 }: { latencyMs?: number } = {}):
   function log(entry: Omit<ActivityLog, 'id' | 'at'> & { at?: string }) {
     db.logs.unshift({ ...entry, id: `log-${nanoid(10)}`, at: entry.at ?? nowIso() })
     if (db.logs.length > MAX_LOGS) db.logs.length = MAX_LOGS
+  }
+
+  /** Aktor bila ada sesi valid; null untuk pengunjung tanpa login (endpoint publik). */
+  function optionalActor(): UserRecord | null {
+    const token = getAuthToken()
+    const session = token ? db.sessions[token] : undefined
+    const user = session && db.users.find((u) => u.id === session.userId)
+    return user && user.status === 'active' ? user : null
   }
 
   /** Aktor dari token sesi — persis seperti middleware auth di server. */
@@ -92,19 +116,11 @@ export function createMockApi({ latencyMs = 200 }: { latencyMs?: number } = {}):
 
   /** "Laporan.pdf" → "Laporan (1).pdf" bila nama sudah dipakai. */
   function uniqueName(parentId: string, name: string, taken = new Set<string>()) {
-    const used = new Set([...taken, ...siblingsOf(parentId).map((n) => n.name.toLowerCase())])
-    if (!used.has(name.toLowerCase())) return name
-    const dot = name.lastIndexOf('.')
-    const base = dot > 0 ? name.slice(0, dot) : name
-    const ext = dot > 0 ? name.slice(dot) : ''
-    for (let i = 1; ; i++) {
-      const candidate = `${base} (${i})${ext}`
-      if (!used.has(candidate.toLowerCase())) return candidate
-    }
+    return pickUniqueName(name, [...taken, ...siblingsOf(parentId).map((n) => n.name)])
   }
 
-  /** Ambil aktor + node + workspace, lalu pastikan aktor punya izin. */
-  function authorize(nodeId: string, permission: WorkspacePermission, what: string) {
+  /** Izin level workspace (anggota, sampah). */
+  function authorizeWorkspace(nodeId: string, permission: WorkspacePermission, what: string) {
     const user = actor()
     const node = getNode(nodeId)
     const ws = getNode(node.workspaceId)
@@ -113,6 +129,51 @@ export function createMockApi({ latencyMs = 200 }: { latencyMs?: number } = {}):
       throw new ApiError('FORBIDDEN', `Peran Anda tidak memiliki izin untuk ${what}.`)
     return { user, node, ws }
   }
+
+  /** Izin pada folder/file (ACL): lihat, unduh, edit, hapus, bagikan. */
+  function authorizeNode(nodeId: string, permission: NodePermission, what: string) {
+    const user = actor()
+    const node = getNode(nodeId)
+    const ws = getNode(node.workspaceId)
+    if (!isNodeVisible(user, node, db.nodes)) throw new ApiError('NOT_FOUND', 'Item tidak ditemukan.')
+    if (!resolveNodePermissions(user, node, db.nodes)[permission])
+      throw new ApiError('FORBIDDEN', `Anda tidak memiliki izin untuk ${what}.`)
+    return { user, node, ws }
+  }
+
+  /** Node + izin efektif aktor (`myPermissions`) — bentuk yang dikirim ke client. */
+  const present = (user: UserRecord, node: DriveNode): DriveNode => ({
+    ...node,
+    myPermissions: resolveNodePermissions(user, node, db.nodes),
+  })
+
+  /** Hanya field yang aman dikirim ke pengunjung tanpa login. */
+  const toPublicNode = (n: DriveNode, isRoot = false): PublicNode => ({
+    id: n.id,
+    kind: n.kind,
+    name: n.name,
+    parentId: isRoot ? null : n.parentId,
+    fileType: n.fileType,
+    size: n.size,
+    version: n.version,
+    createdAt: n.createdAt,
+    updatedAt: n.updatedAt,
+  })
+
+  /** Node milik access key yang masih berlaku (aktif, belum kedaluwarsa, tidak di sampah). */
+  function findActiveShare(key: string) {
+    const node = Object.values(db.nodes).find((n) => n.shareLink?.key === key)
+    if (!node || !isShareLinkActive(node.shareLink) || isInTrash(node.id))
+      throw new ApiError('NOT_FOUND', 'Link tidak valid atau sudah tidak berlaku.')
+    return { node, link: node.shareLink! }
+  }
+
+  /** Nama subjek aturan akses untuk log: nama pengguna atau "Semua Editor". */
+  const subjectName = (e: AccessEntry) =>
+    e.subjectType === 'user'
+      ? (db.users.find((u) => u.id === e.subjectUserId)?.name ?? 'Pengguna')
+      : `Semua ${accessRoleById(e.subjectRoleId)?.label ?? 'peran'}`
+  const subjectKey = (e: AccessEntry) => `${e.subjectType}:${e.subjectType === 'user' ? e.subjectUserId : e.subjectRoleId}`
 
   function requireSystem(permission: Parameters<typeof canSystem>[1], what: string) {
     const user = actor()
@@ -204,10 +265,10 @@ export function createMockApi({ latencyMs = 200 }: { latencyMs?: number } = {}):
 
     listNodes: endpoint(() => {
       const user = actor()
-      return Object.values(db.nodes).filter((n) => {
-        const ws = db.nodes[n.workspaceId]
-        return !!ws && canAccessWorkspace(user, ws)
-      })
+      // termasuk item yang dibagikan ke user walau ia bukan anggota workspace-nya
+      return Object.values(db.nodes)
+        .filter((n) => !!db.nodes[n.workspaceId] && isNodeVisible(user, n, db.nodes))
+        .map((n) => present(user, n))
     }),
 
     listActivity: endpoint(({ since, limit } = {}) => {
@@ -239,11 +300,11 @@ export function createMockApi({ latencyMs = 200 }: { latencyMs?: number } = {}):
       }
       db.nodes[id] = ws
       log({ actorId: user.id, action: 'create', at, ...nodeLog(ws) })
-      return ws
+      return present(user, ws)
     }),
 
     addMember: endpoint((workspaceId, userId, role) => {
-      const { user, ws } = authorize(workspaceId, 'members.manage', 'mengelola anggota')
+      const { user, ws } = authorizeWorkspace(workspaceId, 'members.manage', 'mengelola anggota')
       const subject = db.users.find((u) => u.id === userId)
       if (!subject) throw new ApiError('NOT_FOUND', 'Pengguna tidak ditemukan.')
       if (ws.members?.some((m) => m.userId === userId))
@@ -258,13 +319,13 @@ export function createMockApi({ latencyMs = 200 }: { latencyMs?: number } = {}):
         ...nodeLog(ws),
         meta: { subjectUserId: userId, subjectName: subject.name, role },
       })
-      return ws
+      return present(user, ws)
     }),
 
     updateMemberRole: endpoint((workspaceId, userId, role) => {
-      const { user, ws } = authorize(workspaceId, 'members.manage', 'mengubah peran anggota')
+      const { user, ws } = authorizeWorkspace(workspaceId, 'members.manage', 'mengubah peran anggota')
       const member = findMember(ws, userId)
-      if (member.role === role) return ws
+      if (member.role === role) return present(user, ws)
       if (member.role === 'manager' && managerCount(ws) <= 1)
         throw new ApiError('CONFLICT', 'Workspace harus memiliki minimal satu Pengelola.')
       const from = member.role
@@ -278,11 +339,11 @@ export function createMockApi({ latencyMs = 200 }: { latencyMs?: number } = {}):
         ...nodeLog(ws),
         meta: { subjectUserId: userId, subjectName: db.users.find((u) => u.id === userId)?.name, from, to: role },
       })
-      return ws
+      return present(user, ws)
     }),
 
     removeMember: endpoint((workspaceId, userId) => {
-      const { user, ws } = authorize(workspaceId, 'members.manage', 'mengeluarkan anggota')
+      const { user, ws } = authorizeWorkspace(workspaceId, 'members.manage', 'mengeluarkan anggota')
       const member = findMember(ws, userId)
       if (member.role === 'manager' && managerCount(ws) <= 1)
         throw new ApiError('CONFLICT', 'Workspace harus memiliki minimal satu Pengelola.')
@@ -296,13 +357,13 @@ export function createMockApi({ latencyMs = 200 }: { latencyMs?: number } = {}):
         ...nodeLog(ws),
         meta: { subjectUserId: userId, subjectName: db.users.find((u) => u.id === userId)?.name, role: member.role },
       })
-      return ws
+      return present(user, ws)
     }),
 
     /* ------------------------------ folder & file ----------------------------- */
 
     createFolder: endpoint((parentId, name) => {
-      const { user, node: parent, ws } = authorize(parentId, 'file.create', 'membuat folder')
+      const { user, node: parent, ws } = authorizeNode(parentId, 'canEdit', 'membuat folder di sini')
       assertValidName(parentId, name)
       const at = nowIso()
       const folder: DriveNode = {
@@ -318,11 +379,11 @@ export function createMockApi({ latencyMs = 200 }: { latencyMs?: number } = {}):
       }
       db.nodes[folder.id] = folder
       log({ actorId: user.id, action: 'create', at, ...nodeLog(folder), meta: { parentName: parent.name } })
-      return folder
+      return present(user, folder)
     }),
 
     uploadFiles: endpoint((parentId, files) => {
-      const { user, node: parent, ws } = authorize(parentId, 'file.create', 'mengunggah file')
+      const { user, node: parent, ws } = authorizeNode(parentId, 'canEdit', 'mengunggah file di sini')
       const taken = new Set<string>()
       return files.map((file) => {
         const at = nowIso()
@@ -347,37 +408,71 @@ export function createMockApi({ latencyMs = 200 }: { latencyMs?: number } = {}):
         }
         db.nodes[node.id] = node
         log({ actorId: user.id, action: 'upload', at, ...nodeLog(node), meta: { parentName: parent.name } })
-        return node
+        return present(user, node)
       })
     }),
 
     renameNode: endpoint((id, name) => {
       const node = getNode(id)
-      const permission: WorkspacePermission = node.kind === 'workspace' ? 'members.manage' : 'file.edit'
-      const { user } = authorize(id, permission, 'mengganti nama')
+      const { user } =
+        node.kind === 'workspace'
+          ? authorizeWorkspace(id, 'members.manage', 'mengganti nama workspace')
+          : authorizeNode(id, 'canEdit', 'mengganti nama')
       const clean = name.trim()
-      if (clean === node.name) return node
+      if (clean === node.name) return present(user, node)
       assertValidName(node.parentId, clean, id)
       const from = node.name
       const at = nowIso()
       node.name = clean
       touch(node, user.id, at)
       log({ actorId: user.id, action: 'rename', at, ...nodeLog(node), meta: { from, to: clean } })
-      return node
+      return present(user, node)
+    }),
+
+    moveNode: endpoint((id, targetId) => {
+      const { user, node, ws: fromWs } = authorizeNode(id, 'canEdit', 'memindahkan item')
+      if (node.kind === 'workspace') throw new ApiError('FORBIDDEN', 'Workspace tidak dapat dipindahkan.')
+      if (isInTrash(id)) throw new ApiError('CONFLICT', 'Item di sampah tidak dapat dipindahkan.')
+      const { node: target, ws: toWs } = authorizeNode(targetId, 'canEdit', 'menambahkan item ke folder tujuan')
+      if (target.kind === 'file' || isInTrash(targetId))
+        throw new ApiError('VALIDATION', 'Tujuan harus berupa folder atau workspace yang aktif.')
+      if (node.parentId === targetId) throw new ApiError('CONFLICT', `"${node.name}" sudah berada di ${target.name}.`)
+      const subtree = subtreeIds(id)
+      if (subtree.includes(targetId))
+        throw new ApiError('VALIDATION', 'Folder tidak dapat dipindahkan ke dalam dirinya sendiri.')
+
+      const fromParent = node.parentId ? db.nodes[node.parentId] : undefined
+      const at = nowIso()
+      // nama bentrok di tujuan → beri akhiran, mis. "Laporan (1).pdf"
+      node.name = uniqueName(targetId, node.name)
+      node.parentId = targetId
+      for (const sid of subtree) db.nodes[sid]!.workspaceId = toWs.id
+      log({
+        actorId: user.id,
+        action: 'move',
+        at,
+        ...nodeLog(node),
+        meta: {
+          from: fromParent?.name,
+          to: target.name,
+          fromWorkspaceId: fromWs.id !== toWs.id ? fromWs.id : undefined,
+        },
+      })
+      return subtree.map((sid) => present(user, db.nodes[sid]!))
     }),
 
     trashNode: endpoint((id) => {
-      const { user, node } = authorize(id, 'file.delete', 'menghapus item')
+      const { user, node } = authorizeNode(id, 'canDelete', 'menghapus item')
       if (node.kind === 'workspace') throw new ApiError('FORBIDDEN', 'Workspace tidak dapat dihapus dari sini.')
       const at = nowIso()
       node.deletedBy = user.id
       node.deletedAt = at
       log({ actorId: user.id, action: 'delete', at, ...nodeLog(node) })
-      return node
+      return present(user, node)
     }),
 
     restoreNode: endpoint((id) => {
-      const { user, node, ws } = authorize(id, 'trash.restore', 'memulihkan item')
+      const { user, node, ws } = authorizeWorkspace(id, 'trash.restore', 'memulihkan item')
       const at = nowIso()
       // induk sudah tidak ada / masih di sampah → pulihkan ke akar workspace
       if (!node.parentId || !db.nodes[node.parentId] || isInTrash(node.parentId)) node.parentId = ws.id
@@ -392,11 +487,11 @@ export function createMockApi({ latencyMs = 200 }: { latencyMs?: number } = {}):
         ...nodeLog(node),
         meta: { parentName: db.nodes[node.parentId]?.name },
       })
-      return node
+      return present(user, node)
     }),
 
     purgeNode: endpoint((id) => {
-      const { user, node } = authorize(id, 'trash.purge', 'menghapus permanen')
+      const { user, node } = authorizeWorkspace(id, 'trash.purge', 'menghapus permanen')
       log({ actorId: user.id, action: 'purge', ...nodeLog(node) })
       const removedIds = subtreeIds(id)
       for (const rid of removedIds) delete db.nodes[rid]
@@ -406,8 +501,7 @@ export function createMockApi({ latencyMs = 200 }: { latencyMs?: number } = {}):
     recordOpen: endpoint((id, version) => {
       const user = actor()
       const node = getNode(id)
-      const ws = getNode(node.workspaceId)
-      if (!canAccessWorkspace(user, ws) || isInTrash(id)) return
+      if (isInTrash(id) || !isNodeVisible(user, node, db.nodes)) return
       const latest = node.versions?.at(-1)?.version
       const oldVersion = version !== undefined && version !== latest ? version : undefined
       const at = nowIso()
@@ -432,26 +526,177 @@ export function createMockApi({ latencyMs = 200 }: { latencyMs?: number } = {}):
     }),
 
     getDownload: endpoint((id, version) => {
-      const { user, node } = authorize(id, 'file.download', 'mengunduh file')
+      const { user, node } = authorizeNode(id, 'canDownload', 'mengunduh file')
       const latest = node.versions?.at(-1)?.version
       const oldVersion = version !== undefined && version !== latest ? version : undefined
       log({ actorId: user.id, action: 'download', ...nodeLog(node), meta: oldVersion ? { version: oldVersion } : undefined })
       return { url: null, fileName: node.name }
     }),
 
+    /* ----------------------------- akses folder/file ---------------------------- */
+
+    getNodeAccess: endpoint((id) => {
+      const { node } = authorizeNode(id, 'canView', 'melihat akses')
+      return node.access ?? []
+    }),
+
+    updateNodeAccess: endpoint((id, entries) => {
+      const { user, node } = authorizeNode(id, 'canShare', 'mengatur akses')
+      if (node.kind === 'workspace')
+        throw new ApiError('VALIDATION', 'Akses workspace diatur lewat anggota & peran workspace.')
+
+      // validasi & normalisasi
+      const seen = new Set<string>()
+      const next: AccessEntry[] = entries.map((e) => {
+        const flags = normalizePermissions(e)
+        if (e.subjectType === 'user') {
+          // boleh siapa saja (termasuk di luar workspace) — item akan muncul di "Dibagikan ke saya"
+          const subject = db.users.find((u) => u.id === e.subjectUserId)
+          if (!subject) throw new ApiError('VALIDATION', 'Pengguna tidak ditemukan.')
+          if (subject.status !== 'active') throw new ApiError('VALIDATION', `Akun ${subject.name} nonaktif.`)
+        } else if (!accessRoleById(e.subjectRoleId)) {
+          throw new ApiError('VALIDATION', 'Peran akses tidak dikenal.')
+        }
+        const key = subjectKey(e)
+        if (seen.has(key)) throw new ApiError('VALIDATION', 'Setiap subjek hanya boleh punya satu aturan.')
+        seen.add(key)
+        return e.subjectType === 'user'
+          ? { subjectType: 'user', subjectUserId: e.subjectUserId, subjectRoleId: matchAccessRole(flags)?.id ?? null, ...flags }
+          : { subjectType: 'role', subjectUserId: null, subjectRoleId: e.subjectRoleId, ...flags }
+      })
+
+      // catat perubahan per subjek
+      const before = new Map((node.access ?? []).map((e) => [subjectKey(e), e]))
+      const at = nowIso()
+      for (const e of next) {
+        const prev = before.get(subjectKey(e))
+        if (prev && NODE_PERMISSIONS.every((k) => prev[k] === e[k])) continue
+        log({
+          actorId: user.id,
+          action: 'access_grant',
+          at,
+          ...nodeLog(node),
+          meta: {
+            subjectUserId: e.subjectUserId ?? undefined,
+            subjectName: subjectName(e),
+            to: `${accessLabel(e)} (${describePermissions(e)})`,
+          },
+        })
+      }
+      for (const [key, prev] of before) {
+        if (seen.has(key)) continue
+        log({
+          actorId: user.id,
+          action: 'access_revoke',
+          at,
+          ...nodeLog(node),
+          meta: { subjectUserId: prev.subjectUserId ?? undefined, subjectName: subjectName(prev) },
+        })
+      }
+
+      node.access = next
+      return present(user, node)
+    }),
+
+    updateShareLink: endpoint((id, { enabled, canDownload, expiresAt, regenerate }) => {
+      const { user, node } = authorizeNode(id, 'canShare', 'mengatur link publik')
+      if (node.kind === 'workspace') throw new ApiError('VALIDATION', 'Workspace tidak bisa dibagikan lewat link publik.')
+      if (expiresAt && Date.parse(expiresAt) <= Date.now())
+        throw new ApiError('VALIDATION', 'Tanggal kedaluwarsa harus di masa depan.', { field: 'expiresAt' })
+      const at = nowIso()
+      const prev = regenerate ? null : node.shareLink
+      node.shareLink = {
+        key: prev?.key ?? `pub_${nanoid(24)}`, // access key acak; buat ulang → link lama mati
+        enabled,
+        canDownload,
+        expiresAt,
+        createdBy: prev?.createdBy ?? user.id,
+        createdAt: prev?.createdAt ?? at,
+        updatedAt: at,
+      }
+      const summary = shareLinkSummary(node.shareLink)
+      log({
+        actorId: user.id,
+        action: 'link_update',
+        at,
+        ...nodeLog(node),
+        meta: { to: regenerate ? `${summary} · link dibuat ulang` : summary },
+      })
+      return present(user, node)
+    }),
+
+    /* ------------------------------ link publik (tanpa login) ----------------------------- */
+
+    getPublicShare: endpoint((key) => {
+      const { node, link } = findActiveShare(key)
+      const viewer = optionalActor()
+      const at = nowIso()
+      // catat kunjungan (dedupe 10 menit per pengunjung)
+      const recentlyLogged = db.logs
+        .slice(0, 100)
+        .some(
+          (l) =>
+            l.action === 'link_view' &&
+            l.targetId === node.id &&
+            l.actorId === (viewer?.id ?? null) &&
+            Date.now() - Date.parse(l.at) < 10 * MINUTE,
+        )
+      if (!recentlyLogged) {
+        log({
+          actorId: viewer?.id ?? null,
+          action: 'link_view',
+          at,
+          ...nodeLog(node),
+          meta: viewer ? undefined : { identifier: 'Pengunjung tanpa login' },
+        })
+      }
+      const descendants =
+        node.kind === 'folder'
+          ? subtreeIds(node.id)
+              .slice(1)
+              .filter((nid) => !isInTrash(nid))
+              .map((nid) => toPublicNode(db.nodes[nid]!))
+          : []
+      return {
+        key,
+        permissions: { canView: true, canDownload: link.canDownload },
+        expiresAt: link.expiresAt,
+        sharedBy: db.users.find((u) => u.id === link.createdBy)?.name ?? 'Varnion Space',
+        root: toPublicNode(node, true),
+        nodes: descendants,
+      }
+    }),
+
+    getPublicDownload: endpoint((key, nodeId, version) => {
+      const { node: root, link } = findActiveShare(key)
+      if (!link.canDownload) throw new ApiError('FORBIDDEN', 'Link ini tidak mengizinkan unduhan.')
+      const node = db.nodes[nodeId]
+      const insideShare = root.id === nodeId || subtreeIds(root.id).includes(nodeId)
+      if (!node || node.kind !== 'file' || !insideShare || isInTrash(nodeId))
+        throw new ApiError('NOT_FOUND', 'File tidak ditemukan di link ini.')
+      const viewer = optionalActor()
+      log({
+        actorId: viewer?.id ?? null,
+        action: 'link_download',
+        ...nodeLog(node),
+        meta: { identifier: viewer ? undefined : 'Pengunjung tanpa login', version },
+      })
+      return { url: null, fileName: node.name }
+    }),
+
     /* -------------------------------- versi file ------------------------------- */
 
     uploadVersion: endpoint((id, file, note) => {
-      const { user, node } = authorize(id, 'file.edit', 'memperbarui file')
+      const { user, node } = authorizeNode(id, 'canEdit', 'memperbarui file')
       if (node.kind !== 'file') throw new ApiError('VALIDATION', 'Hanya file yang memiliki versi.')
       const cleanNote = note?.trim() || 'Memperbarui file'
       const { version, at } = addVersion(node, user.id, { size: file.size, note: cleanNote })
       log({ actorId: user.id, action: 'edit', at, ...nodeLog(node), meta: { version, note: cleanNote } })
-      return node
+      return present(user, node)
     }),
 
     restoreVersion: endpoint((id, fromVersion) => {
-      const { user, node } = authorize(id, 'file.edit', 'memulihkan versi file')
+      const { user, node } = authorizeNode(id, 'canEdit', 'memulihkan versi file')
       const source = node.versions?.find((v) => v.version === fromVersion)
       if (!source) throw new ApiError('NOT_FOUND', `Versi ${fromVersion} tidak ditemukan.`)
       if (fromVersion === node.versions?.at(-1)?.version)
@@ -465,7 +710,7 @@ export function createMockApi({ latencyMs = 200 }: { latencyMs?: number } = {}):
         ...nodeLog(node),
         meta: { version, restoredFrom: fromVersion, note },
       })
-      return node
+      return present(user, node)
     }),
 
     /* -------------------------------- pengguna -------------------------------- */

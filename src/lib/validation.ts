@@ -22,3 +22,19 @@ export function validateName(
 }
 
 export const isValidEmail = (email: string) => /^\S+@\S+\.\S+$/.test(email.trim())
+
+/**
+ * Nama unik di sebuah folder: "Laporan.pdf" → "Laporan (1).pdf" bila sudah dipakai.
+ * `taken` = nama yang sudah ada (tidak peka huruf besar/kecil).
+ */
+export function uniqueName(name: string, taken: Iterable<string>): string {
+  const used = new Set([...taken].map((n) => n.toLowerCase()))
+  if (!used.has(name.toLowerCase())) return name
+  const dot = name.lastIndexOf('.')
+  const base = dot > 0 ? name.slice(0, dot) : name
+  const ext = dot > 0 ? name.slice(dot) : ''
+  for (let i = 1; ; i++) {
+    const candidate = `${base} (${i})${ext}`
+    if (!used.has(candidate.toLowerCase())) return candidate
+  }
+}

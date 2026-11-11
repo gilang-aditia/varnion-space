@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
-import { Clock, SearchX } from 'lucide-react'
+import { Clock, SearchX, Users } from 'lucide-react'
 import { useAppSelector } from '@/store/hooks'
-import { getPath, isInTrash, selectAccessibleWorkspaceIds, selectRecent } from '@/store/selectors'
+import { getPath, isInTrash, selectRecent, selectSharedWithMe } from '@/store/selectors'
 import { useNow } from '@/hooks/use-drive'
 import type { DriveNode } from '@/types/drive'
 import { EmptyState } from '@/components/common/empty-state'
@@ -15,24 +15,22 @@ function useLocationOf() {
     getPath(nodes, n.id)
       .slice(0, -1)
       .map((p) => p.name)
-      .join(' › ')
+      .join(' › ') || 'Dibagikan dengan Anda'
 }
 
 export function SearchResults({ query }: { query: string }) {
   const now = useNow()
   const nodes = useAppSelector((s) => s.drive.nodes)
-  const wsIds = useAppSelector(selectAccessibleWorkspaceIds)
   const { viewMode, sortBy, sortDir } = useAppSelector((s) => s.ui)
   const locationOf = useLocationOf()
 
   const results = useMemo(() => {
     const q = query.trim().toLowerCase()
     if (!q) return []
-    const matches = Object.values(nodes).filter(
-      (n) => wsIds.has(n.workspaceId) && n.name.toLowerCase().includes(q) && !isInTrash(nodes, n.id),
-    )
+    // cache hanya berisi item yang boleh dilihat (termasuk yang dibagikan ke user)
+    const matches = Object.values(nodes).filter((n) => n.name.toLowerCase().includes(q) && !isInTrash(nodes, n.id))
     return sortNodes(matches, sortBy, sortDir).slice(0, 100)
-  }, [nodes, wsIds, query, sortBy, sortDir])
+  }, [nodes, query, sortBy, sortDir])
 
   return (
     <div className="px-4 py-5 sm:px-6">
@@ -70,6 +68,30 @@ export function RecentView() {
         <EmptyState icon={Clock} title="Belum ada file" />
       ) : (
         <NodeList nodes={recent} now={now} locationOf={locationOf} sortable={false} />
+      )}
+    </div>
+  )
+}
+
+/** Item yang dibagikan langsung ke user, termasuk dari workspace yang tidak ia ikuti. */
+export function SharedView() {
+  const now = useNow()
+  const shared = useAppSelector(selectSharedWithMe)
+  const locationOf = useLocationOf()
+  return (
+    <div className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:px-8">
+      <h1 className="text-xl font-semibold tracking-tight">Dibagikan ke saya</h1>
+      <p className="mt-0.5 mb-5 text-sm text-muted-foreground">
+        Folder & file yang dibagikan langsung ke Anda — termasuk dari workspace yang tidak Anda ikuti.
+      </p>
+      {shared.length === 0 ? (
+        <EmptyState
+          icon={Users}
+          title="Belum ada yang dibagikan"
+          description="Item yang dibagikan orang lain kepada Anda akan muncul di sini."
+        />
+      ) : (
+        <NodeList nodes={shared} now={now} locationOf={locationOf} sortable={false} />
       )}
     </div>
   )

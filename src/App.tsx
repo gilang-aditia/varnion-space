@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { CloudOff, LoaderCircle } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { logout, restoreSession, syncRouteFromUrl } from '@/store/thunks'
@@ -8,6 +8,8 @@ import { Toaster } from '@/components/common/toaster'
 import { LogoMark } from '@/components/common/logo'
 import { LoginPage } from '@/components/auth/login-page'
 import { AppShell } from '@/components/layout/app-shell'
+import { PublicSharePage } from '@/components/public/public-share-page'
+import { parseShareHash } from '@/lib/share-link'
 
 function useThemeClass() {
   const theme = useAppSelector((s) => s.ui.theme)
@@ -29,10 +31,23 @@ function useHistoryNavigation(enabled: boolean) {
   const dispatch = useAppDispatch()
   useEffect(() => {
     if (!enabled) return
+    // mis. kembali dari halaman link publik ke "#/f/<id>" → ikuti URL saat ini
+    dispatch(syncRouteFromUrl())
     const onPop = () => dispatch(syncRouteFromUrl())
     window.addEventListener('popstate', onPop)
     return () => window.removeEventListener('popstate', onPop)
   }, [dispatch, enabled])
+}
+
+/** `/#/s/<key>` → halaman link publik (tanpa login). */
+function useShareLinkRoute() {
+  const [share, setShare] = useState(() => parseShareHash(window.location.hash))
+  useEffect(() => {
+    const onHashChange = () => setShare(parseShareHash(window.location.hash))
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+  return share
 }
 
 /** Layar saat memulihkan sesi tersimpan (atau gagal memuat data awal). */
@@ -66,8 +81,19 @@ function SessionSplash({ failed }: { failed: boolean }) {
 
 export default function App() {
   const status = useAppSelector((s) => s.auth.status)
+  const shareLink = useShareLinkRoute()
   useThemeClass()
-  useHistoryNavigation(status === 'ready')
+  useHistoryNavigation(status === 'ready' && !shareLink)
+
+  // Link publik bisa dibuka siapa saja — dengan atau tanpa login
+  if (shareLink) {
+    return (
+      <TooltipProvider delayDuration={300}>
+        <PublicSharePage key={shareLink.key} shareKey={shareLink.key} nodeId={shareLink.nodeId} />
+        <Toaster />
+      </TooltipProvider>
+    )
+  }
 
   return (
     <TooltipProvider delayDuration={300}>

@@ -1,9 +1,10 @@
 import type { KeyboardEvent } from 'react'
-import { ArrowDown, ArrowUp } from 'lucide-react'
+import { ArrowDown, ArrowUp, Globe, Users } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { FILE_TYPE_META } from '@/lib/file-types'
 import { formatBytes, formatDateTime, formatRelative } from '@/lib/format'
 import { displayName, type SortKey } from '@/lib/node-utils'
+import { isShareLinkActive } from '@/lib/share-link'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { selectChildrenIndex } from '@/store/selectors'
 import { uiActions } from '@/store/slices/uiSlice'
@@ -14,6 +15,7 @@ import { NodeIcon } from '@/components/common/node-icon'
 import { UserAvatar } from '@/components/common/user-avatar'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { NodeMenu } from './node-menu'
+import { useDraggableNode, useDropTarget } from './drag-move'
 
 /* -------------------------------------------------------------------------- */
 /*                                   Helpers                                  */
@@ -42,7 +44,7 @@ function hash(s: string) {
 }
 
 /** Area "thumbnail" untuk file (tanpa konten asli — ini slicing UI). */
-export function FileThumb({ node, className }: { node: DriveNode; className?: string }) {
+export function FileThumb({ node, className }: { node: Pick<DriveNode, 'name' | 'fileType'>; className?: string }) {
   const meta = FILE_TYPE_META[node.fileType ?? 'other']
   const Icon = meta.icon
   if (node.fileType === 'image') {
@@ -73,6 +75,29 @@ export function FileThumb({ node, className }: { node: DriveNode; className?: st
   )
 }
 
+/** Penanda berbagi: ikon bola dunia = link publik aktif, ikon orang = aturan akses khusus. */
+function SharedIndicator({ node }: { node: DriveNode }) {
+  const rules = node.access?.length ?? 0
+  const isPublic = isShareLinkActive(node.shareLink)
+  if (!rules && !isPublic) return null
+  const Icon = isPublic ? Globe : Users
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Icon
+          className={cn('size-3.5 shrink-0', isPublic ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground')}
+          aria-label={isPublic ? 'Link publik aktif' : 'Dibagikan khusus'}
+        />
+      </TooltipTrigger>
+      <TooltipContent>
+        {[isPublic && 'Siapa saja yang punya link bisa membuka', rules && `${rules} aturan akses khusus`]
+          .filter(Boolean)
+          .join(' · ')}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                    Cards                                   */
 /* -------------------------------------------------------------------------- */
@@ -81,6 +106,8 @@ function FolderCard({ node }: { node: DriveNode }) {
   const dispatch = useAppDispatch()
   const index = useAppSelector(selectChildrenIndex)
   const count = index[node.id]?.length ?? 0
+  const { dragging, dragProps } = useDraggableNode(node)
+  const { over, dropProps } = useDropTarget(node.id)
   const open = () => dispatch(openNode(node.id))
   return (
     <div
@@ -88,11 +115,20 @@ function FolderCard({ node }: { node: DriveNode }) {
       tabIndex={0}
       onClick={open}
       onKeyDown={onActivate(open)}
-      className="group flex h-14 cursor-pointer items-center gap-3 rounded-xl border bg-card pr-1.5 pl-3 transition hover:border-primary/30 hover:bg-primary/[0.03] hover:shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+      {...dragProps}
+      {...dropProps}
+      className={cn(
+        'group flex h-14 cursor-pointer items-center gap-3 rounded-xl border bg-card pr-1.5 pl-3 transition hover:border-primary/30 hover:bg-primary/[0.03] hover:shadow-sm focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
+        dragging && 'opacity-40',
+        over && 'border-primary bg-primary/10 ring-2 ring-primary/40',
+      )}
     >
       <NodeIcon node={node} size="sm" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{node.name}</p>
+        <p className="flex items-center gap-1.5 text-sm font-medium">
+          <span className="truncate">{node.name}</span>
+          <SharedIndicator node={node} />
+        </p>
         <p className="truncate text-xs text-muted-foreground">{count ? `${count} item` : 'Kosong'}</p>
       </div>
       <NodeMenu node={node} className="opacity-60 group-hover:opacity-100" />
@@ -106,19 +142,25 @@ export function FileCard({ node, now, showLocation }: { node: DriveNode; now: nu
   const editor = useAppSelector((s) => s.users.byId[node.updatedBy])
   const open = () => dispatch(openNode(node.id))
   const created = node.createdAt === node.updatedAt
+  const { dragging, dragProps } = useDraggableNode(node)
   return (
     <div
       role="button"
       tabIndex={0}
       onClick={open}
       onKeyDown={onActivate(open)}
-      className="group flex cursor-pointer flex-col overflow-hidden rounded-xl border bg-card transition hover:border-primary/30 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+      {...dragProps}
+      className={cn(
+        'group flex cursor-pointer flex-col overflow-hidden rounded-xl border bg-card transition hover:border-primary/30 hover:shadow-md focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none',
+        dragging && 'opacity-40',
+      )}
     >
       <div className="flex items-center gap-2 py-1.5 pr-1 pl-3">
         <NodeIcon node={node} size="xs" />
         <p className="min-w-0 flex-1 truncate text-sm font-medium" title={node.name}>
           {node.name}
         </p>
+        <SharedIndicator node={node} />
         <NodeMenu node={node} className="opacity-60 group-hover:opacity-100" />
       </div>
       <FileThumb node={node} className="mx-2 aspect-[16/10] rounded-lg" />
@@ -210,19 +252,30 @@ function ListRow({ node, now, location }: { node: DriveNode; now: number; locati
   const owner = useAppSelector((s) => s.users.byId[node.createdBy])
   const editor = useAppSelector((s) => s.users.byId[node.updatedBy])
   const index = useAppSelector(selectChildrenIndex)
+  const { dragging, dragProps } = useDraggableNode(node)
+  const { over, dropProps } = useDropTarget(node.id)
   const open = () => dispatch(openNode(node.id))
   return (
     <tr
       tabIndex={0}
       onClick={open}
       onKeyDown={onActivate(open)}
-      className="group cursor-pointer border-b transition-colors last:border-0 hover:bg-muted/50 focus-visible:bg-muted/60 focus-visible:outline-none"
+      {...dragProps}
+      {...(node.kind === 'folder' ? dropProps : {})}
+      className={cn(
+        'group cursor-pointer border-b transition-colors last:border-0 hover:bg-muted/50 focus-visible:bg-muted/60 focus-visible:outline-none',
+        dragging && 'opacity-40',
+        over && 'bg-primary/10 outline-2 -outline-offset-2 outline-primary/50',
+      )}
     >
       <td className="px-3 py-2">
         <div className="flex min-w-0 items-center gap-3">
           <NodeIcon node={node} size="sm" />
           <div className="min-w-0">
-            <p className="truncate text-sm font-medium">{node.name}</p>
+            <p className="flex items-center gap-1.5 text-sm font-medium">
+              <span className="truncate">{node.name}</span>
+              <SharedIndicator node={node} />
+            </p>
             {location && <p className="truncate text-xs text-muted-foreground">{location}</p>}
           </div>
         </div>

@@ -5,12 +5,17 @@
  * Hanya dipakai oleh mock API (src/api/mock) — backend sungguhan tidak membutuhkannya.
  */
 import { fileTypeFromName } from '@/lib/file-types'
+import { shareLinkSummary } from '@/lib/share-link'
+import { accessLabel, accessRoleById, accessRoleOf, describePermissions, matchAccessRole, NO_ACCESS } from '@/lib/rbac'
 import { seededRandom, synthesizeVersions } from './versions'
 import type { UserRecord } from './types'
 import type {
+  AccessEntry,
   ActivityLog,
   AvatarColor,
   DriveNode,
+  NodePermissions,
+  ShareLink,
   SystemRole,
   UserStatus,
   WorkspaceColor,
@@ -526,6 +531,98 @@ export function createSeed(now = Date.now()): SeedData {
     }
     walk(ws.children, ws.id, wsCreated, ws.name)
   }
+
+  /* ------------------------ aturan akses folder/file ------------------------ */
+  const findNode = (wsId: string, path: string[]) =>
+    path.reduce<DriveNode | undefined>(
+      (parent, name) => Object.values(nodes).find((n) => n.parentId === (parent?.id ?? wsId) && n.name === name),
+      undefined,
+    )
+  const forUser = (userId: string, p: NodePermissions): AccessEntry => ({
+    subjectType: 'user',
+    subjectUserId: userId,
+    subjectRoleId: matchAccessRole(p)?.id ?? null,
+    ...p,
+  })
+  const forRole = (role: WorkspaceRole, p: NodePermissions): AccessEntry => ({
+    subjectType: 'role',
+    subjectUserId: null,
+    subjectRoleId: accessRoleOf(role).id,
+    ...p,
+  })
+  const grant = (wsId: string, path: string[], by: string, daysAgo: number, entries: AccessEntry[]) => {
+    const node = findNode(wsId, path)
+    if (!node) return
+    node.access = entries
+    for (const e of entries) {
+      log({
+        at: now - daysAgo * DAY,
+        actorId: by,
+        action: 'access_grant',
+        targetId: node.id,
+        targetName: node.name,
+        targetKind: node.kind,
+        workspaceId: wsId,
+        meta: {
+          subjectUserId: e.subjectUserId ?? undefined,
+          subjectName: e.subjectUserId
+            ? userById[e.subjectUserId]?.name
+            : `Semua ${accessRoleById(e.subjectRoleId)?.label}`,
+          to: `${accessLabel(e)} (${describePermissions(e)})`,
+        },
+      })
+    }
+  }
+  const viewOnly: NodePermissions = { ...NO_ACCESS, canView: true }
+  // Andi (Pelihat di Marketing) boleh mengelola folder Logo
+  grant('ws-marketing', ['Aset Brand', 'Logo'], 'u-sinta', 12, [forUser('u-andi', accessRoleOf('editor').permissions)])
+  // Budi (Editor di Marketing) hanya boleh lihat & unduh Brand Guideline — sama dengan contoh respons backend
+  grant('ws-marketing', ['Aset Brand', 'Brand Guideline 2026.pdf'], 'u-sinta', 8, [
+    forUser('u-budi', accessRoleOf('viewer').permissions),
+  ])
+  // folder Pajak disembunyikan dari Budi
+  grant('ws-keuangan', ['Pajak'], 'u-maya', 20, [forUser('u-budi', NO_ACCESS)])
+  // dibagikan ke orang DI LUAR workspace → muncul di "Dibagikan ke saya" mereka
+  grant('ws-engineering', ['Arsitektur'], 'u-andi', 6, [forUser('u-sinta', accessRoleOf('viewer').permissions)])
+  grant('ws-keuangan', ['Laporan Keuangan Q3.xlsx'], 'u-maya', 4, [forUser('u-andi', accessRoleOf('viewer').permissions)])
+  // Payroll: Pelihat tidak bisa melihat, Editor hanya bisa melihat
+  grant('ws-hr', ['Payroll'], ADMIN, 30, [forRole('viewer', NO_ACCESS), forRole('editor', viewOnly)])
+
+  /* ------------------------ link publik (tanpa login) ------------------------ */
+  // access key demo dibuat mudah dibaca; di backend sungguhan key harus acak & panjang
+  const publish = (
+    wsId: string,
+    path: string[],
+    by: string,
+    daysAgo: number,
+    link: Pick<ShareLink, 'key' | 'canDownload' | 'expiresAt'>,
+    anonymousViews: number,
+  ) => {
+    const node = findNode(wsId, path)
+    if (!node) return
+    const at = now - daysAgo * DAY
+    node.shareLink = { ...link, enabled: true, createdBy: by, createdAt: iso(at), updatedAt: iso(at) }
+    const target = { targetId: node.id, targetName: node.name, targetKind: node.kind, workspaceId: wsId } as const
+    log({ at, actorId: by, action: 'link_update', ...target, meta: { to: shareLinkSummary(node.shareLink) } })
+    for (let i = 1; i <= anonymousViews; i++) {
+      log({
+        at: at + (i * (now - at)) / (anonymousViews + 1),
+        actorId: null,
+        action: 'link_view',
+        ...target,
+        meta: { identifier: 'Pengunjung tanpa login' },
+      })
+    }
+  }
+  publish('ws-marketing', ['Aset Brand', 'Logo'], 'u-sinta', 3, { key: 'pub_brand-logo-2026', canDownload: true, expiresAt: null }, 3)
+  publish(
+    'ws-marketing',
+    ['Persona Pelanggan.pdf'],
+    'u-sinta',
+    1,
+    { key: 'pub_persona-pelanggan', canDownload: false, expiresAt: iso(now + 30 * DAY) },
+    1,
+  )
 
   /* ----------------------- perubahan peran & pengguna ---------------------- */
   log({

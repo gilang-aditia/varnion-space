@@ -40,6 +40,17 @@ function plainDetail(l: ActivityLog): string {
   switch (l.action) {
     case 'rename':
       return `${m.from} → ${m.to}`
+    case 'link_update':
+      return m.to ?? ''
+    case 'link_view':
+    case 'link_download':
+      return `lewat link publik${l.actorId ? '' : ' (tanpa login)'}`
+    case 'access_grant':
+      return `${m.subjectName}: ${m.to}`
+    case 'access_revoke':
+      return `${m.subjectName}: aturan khusus dicabut`
+    case 'move':
+      return `${m.from ?? '—'} → ${m.to}${m.fromWorkspaceId ? ' (antar workspace)' : ''}`
     case 'edit':
       return [m.version ? `versi ${m.version}` : '', m.note ?? ''].filter(Boolean).join(' — ')
     case 'version_restore':

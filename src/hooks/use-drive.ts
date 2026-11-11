@@ -1,13 +1,25 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAppSelector } from '@/store/hooks'
 import { selectCurrentUser } from '@/store/selectors'
-import { can, canSystem, getWorkspaceRole, type SystemPermission, type WorkspacePermission } from '@/lib/rbac'
+import {
+  can,
+  canSystem,
+  getWorkspaceRole,
+  nodePermissions,
+  type SystemPermission,
+  type WorkspacePermission,
+} from '@/lib/rbac'
 
 export function useCurrentUser() {
   return useAppSelector(selectCurrentUser)
 }
 
-/** Peran & izin user aktif pada sebuah workspace. */
+/** Izin efektif user aktif pada sebuah folder/file (lihat, unduh, edit, hapus, bagikan). */
+export function useNodePermissions(nodeId?: string | null) {
+  return nodePermissions(useAppSelector((s) => (nodeId ? s.drive.nodes[nodeId] : undefined)))
+}
+
+/** Peran & izin level workspace (anggota, sampah) + izin sistem. */
 export function usePermissions(workspaceId?: string | null) {
   const user = useCurrentUser()
   const ws = useAppSelector((s) => (workspaceId ? s.drive.nodes[workspaceId] : undefined))

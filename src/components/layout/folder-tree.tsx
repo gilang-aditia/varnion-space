@@ -8,6 +8,7 @@ import { uiActions } from '@/store/slices/uiSlice'
 import { openNode } from '@/store/thunks'
 import type { DriveNode } from '@/types/drive'
 import { NodeIcon } from '@/components/common/node-icon'
+import { useDraggableNode, useDropTarget } from '@/components/drive/drag-move'
 
 /**
  * Pohon navigasi workspace → folder → sub-folder.
@@ -49,6 +50,10 @@ const TreeNode = memo(function TreeNode({
   // Hanya baris workspace yang menjadi tujuan animasi "kartu workspace → sidebar".
   const transitionName = enableTransitions && node.kind === 'workspace' ? vtName(node.id) : undefined
   const rowRef = useRef<HTMLDivElement>(null)
+  // drag & drop: baris folder bisa diseret; semua baris (termasuk workspace) bisa menjadi tujuan.
+  // Menahan item di atas folder tertutup → folder terbuka otomatis.
+  const { dragging, dragProps } = useDraggableNode(node)
+  const { over, dropProps } = useDropTarget(node.id, () => dispatch(uiActions.expandPath([node.id])))
 
   // Pastikan folder aktif terlihat di sidebar (layout effect → terjadi sebelum
   // snapshot "sesudah" view transition diambil, jadi tidak ada lompatan).
@@ -60,12 +65,16 @@ const TreeNode = memo(function TreeNode({
     <li role="treeitem" aria-expanded={hasChildren ? expanded : undefined} aria-selected={active}>
       <div
         ref={rowRef}
+        {...dragProps}
+        {...dropProps}
         className={cn(
           'group/row relative flex h-8 items-center rounded-lg pr-2 text-sm transition-colors',
           transitionName && 'vt-node',
           active
             ? 'bg-primary/10 font-medium text-primary'
             : 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-foreground',
+          dragging && 'opacity-40',
+          over && 'bg-primary/15 text-primary ring-2 ring-primary/50',
         )}
         style={{ paddingLeft: 4 + depth * 14 }}
         data-vt-name={transitionName}

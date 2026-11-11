@@ -9,7 +9,7 @@ import { Sidebar, SidebarContent } from './sidebar'
 import { UploadProvider } from '@/components/drive/upload-provider'
 import { HomeView } from '@/components/drive/home-view'
 import { FolderView } from '@/components/drive/folder-view'
-import { RecentView, SearchResults } from '@/components/drive/search-results'
+import { RecentView, SearchResults, SharedView } from '@/components/drive/search-results'
 import { DetailsPanelContent } from '@/components/drive/details-panel'
 import { ActivityPage } from '@/components/activity/activity-page'
 import { TrashPage } from '@/components/trash/trash-page'
@@ -21,6 +21,7 @@ const XL_QUERY = '(min-width: 1280px)'
 const PAGE_TITLE: Record<string, string> = {
   home: 'Semua Workspace',
   recent: 'Terbaru',
+  shared: 'Dibagikan ke saya',
   activity: 'Log Aktivitas',
   trash: 'Sampah',
   users: 'Pengguna & Peran',
@@ -57,6 +58,7 @@ export function AppShell() {
   else if (route.page === 'home') content = <HomeView />
   else if (route.page === 'folder') content = <FolderView folderId={route.id} />
   else if (route.page === 'recent') content = <RecentView />
+  else if (route.page === 'shared') content = <SharedView />
   else if (route.page === 'activity') content = <ActivityPage />
   else if (route.page === 'trash') content = <TrashPage />
   else content = <UsersPage />

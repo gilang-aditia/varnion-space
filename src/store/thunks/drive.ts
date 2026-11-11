@@ -1,9 +1,10 @@
-import { api } from '@/api'
-import type { DriveNode } from '@/types/drive'
-import { getSubtreeIds, selectChildrenIndex } from '../selectors'
+import { api, type ShareLinkInput } from '@/api'
+import type { AccessEntry, DriveNode } from '@/types/drive'
+import type { AppThunk } from '../index'
+import { getPath, getSubtreeIds, selectChildrenIndex } from '../selectors'
 import { driveActions } from '../slices/driveSlice'
 import { uiActions } from '../slices/uiSlice'
-import { createMutation, notify } from './helpers'
+import { createMutation, handleApiError, notify } from './helpers'
 import { navigate } from './navigation'
 
 /* ------------------------------ Folder & file ----------------------------- */
@@ -45,6 +46,35 @@ export const renameNode = createMutation<DriveNode, { id: string; name: string }
     dispatch(driveActions.upserted(node))
     if (before !== node.name) notify(dispatch, 'Nama berhasil diubah', 'success', `"${before}" → "${node.name}"`)
     return node
+  },
+)
+
+/** Pindahkan file/folder ke folder atau workspace lain (termasuk antar workspace). */
+export const moveNode = createMutation<DriveNode[], { id: string; targetId: string }>(
+  'drive/moveNode',
+  'Gagal memindahkan',
+  async ({ id, targetId }, { dispatch, getState }) => {
+    const before = getState().drive.nodes[id]
+    const nodes = await api.moveNode(id, targetId)
+    dispatch(driveActions.upserted(nodes))
+
+    const state = getState()
+    const moved = state.drive.nodes[id]!
+    const target = state.drive.nodes[targetId]
+    // sedang membuka folder yang dipindah (atau isinya) → buka jalur barunya di sidebar
+    const { route } = state.ui
+    if (route.page === 'folder' && nodes.some((n) => n.id === route.id)) {
+      dispatch(uiActions.expandPath(getPath(state.drive.nodes, route.id).slice(0, -1).map((n) => n.id)))
+    }
+
+    const crossWorkspace = before && before.workspaceId !== moved.workspaceId
+    const details = [
+      crossWorkspace &&
+        `Workspace: ${state.drive.nodes[before.workspaceId]?.name ?? '—'} → ${state.drive.nodes[moved.workspaceId]?.name}`,
+      before && before.name !== moved.name && `Nama disesuaikan menjadi "${moved.name}"`,
+    ].filter(Boolean)
+    notify(dispatch, `"${moved.name}" dipindahkan ke ${target?.name ?? 'folder tujuan'}`, 'success', details.join(' · ') || undefined)
+    return nodes
   },
 )
 
@@ -107,6 +137,51 @@ export const downloadNode = createMutation<void, { id: string; version?: number 
       'info',
       `${fileName} (simulasi — belum terhubung ke storage)`,
     )
+  },
+)
+
+/* -------------------------- Akses folder/file (ACL) ------------------------- */
+
+/** Muat aturan akses terbaru sebuah folder/file ke cache. */
+export const refreshNodeAccess =
+  (id: string): AppThunk<Promise<void>> =>
+  async (dispatch, getState) => {
+    try {
+      const access = await api.getNodeAccess(id)
+      const node = getState().drive.nodes[id]
+      if (node) dispatch(driveActions.upserted({ ...node, access }))
+    } catch (error) {
+      handleApiError(dispatch, error, 'Gagal memuat akses')
+    }
+  }
+
+/** Simpan seluruh aturan akses folder/file (butuh izin "Bagikan"). */
+export const updateNodeAccess = createMutation<DriveNode, { id: string; entries: AccessEntry[] }>(
+  'drive/updateNodeAccess',
+  'Gagal menyimpan akses',
+  async ({ id, entries }, { dispatch }) => {
+    const node = await api.updateNodeAccess(id, entries)
+    // izin efektif & visibilitas isi folder ikut berubah → muat ulang daftar node
+    dispatch(driveActions.received(await api.listNodes()))
+    notify(dispatch, `Akses "${node.name}" disimpan`, 'success', 'Berlaku juga untuk isi folder yang tidak punya aturan sendiri.')
+    return node
+  },
+)
+
+/** Atur link publik (siapa saja yang punya link, tanpa login). */
+export const updateShareLink = createMutation<DriveNode, { id: string } & ShareLinkInput>(
+  'drive/updateShareLink',
+  'Gagal mengatur link publik',
+  async ({ id, ...input }, { dispatch }) => {
+    const node = await api.updateShareLink(id, input)
+    dispatch(driveActions.upserted(node))
+    notify(
+      dispatch,
+      input.regenerate ? 'Link baru dibuat' : input.enabled ? 'Link publik aktif' : 'Link publik dinonaktifkan',
+      input.enabled ? 'success' : 'info',
+      input.regenerate ? 'Link lama sudah tidak berlaku.' : undefined,
+    )
+    return node
   },
 )
 

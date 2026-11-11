@@ -1,15 +1,32 @@
-import { ChevronRight, Ellipsis, House } from 'lucide-react'
+import { ChevronRight, Ellipsis, House, UserRoundCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAppDispatch } from '@/store/hooks'
 import { navigate } from '@/store/thunks'
 import type { DriveNode } from '@/types/drive'
 import { NodeIcon } from '@/components/common/node-icon'
+import { useDropTarget } from './drag-move'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+
+/** Tautan breadcrumb ke folder induk — juga tujuan drop untuk memindahkan item ke atas. */
+function CrumbButton({ node, className }: { node: DriveNode; className: string }) {
+  const dispatch = useAppDispatch()
+  const { over, dropProps } = useDropTarget(node.id)
+  return (
+    <button
+      className={cn(className, over && 'bg-primary/15 text-primary ring-2 ring-primary/50')}
+      onClick={() => dispatch(navigate({ page: 'folder', id: node.id }))}
+      {...dropProps}
+    >
+      {node.kind === 'workspace' && <NodeIcon node={node} size="xs" />}
+      <span className="truncate">{node.name}</span>
+    </button>
+  )
+}
 
 /**
  * Breadcrumb: Semua Workspace › Workspace › Folder › Sub-folder.
@@ -28,10 +45,18 @@ export function Breadcrumbs({ path, className }: { path: DriveNode[]; className?
     <nav aria-label="Breadcrumb" className={cn('min-w-0', className)}>
       <ol className="flex min-w-0 flex-wrap items-center gap-0.5 text-sm">
         <li className="flex items-center">
-          <button className={crumbBtn} onClick={() => dispatch(navigate({ page: 'home' }))}>
-            <House className="size-3.5" />
-            <span className="hidden sm:inline">Semua Workspace</span>
-          </button>
+          {/* item yang dibagikan dari workspace lain tidak punya jalur ke workspace-nya */}
+          {path[0]?.kind === 'workspace' ? (
+            <button className={crumbBtn} onClick={() => dispatch(navigate({ page: 'home' }))}>
+              <House className="size-3.5" />
+              <span className="hidden sm:inline">Semua Workspace</span>
+            </button>
+          ) : (
+            <button className={crumbBtn} onClick={() => dispatch(navigate({ page: 'shared' }))}>
+              <UserRoundCheck className="size-3.5" />
+              <span className="hidden sm:inline">Dibagikan ke saya</span>
+            </button>
+          )}
         </li>
         {visible.map((node, i) => {
           const isLast = i === visible.length - 1
@@ -67,10 +92,7 @@ export function Breadcrumbs({ path, className }: { path: DriveNode[]; className?
                   <span className="truncate">{node.name}</span>
                 </span>
               ) : (
-                <button className={crumbBtn} onClick={() => dispatch(navigate({ page: 'folder', id: node.id }))}>
-                  {node.kind === 'workspace' && <NodeIcon node={node} size="xs" />}
-                  <span className="truncate">{node.name}</span>
-                </button>
+                <CrumbButton node={node} className={crumbBtn} />
               )}
             </li>
           )
