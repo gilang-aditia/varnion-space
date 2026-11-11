@@ -1,11 +1,10 @@
 # Integrasi Backend
 
 Frontend hanya berbicara dengan interface `DriveApi` di [`src/api/contract.ts`](../src/api/contract.ts).
-Saat ini dipakai **mock server** di browser (`src/api/mock`). Untuk memakai backend sungguhan:
+Atur alamat backend di `.env.local`:
 
 ```bash
 # .env.local
-VITE_API_MODE=http
 VITE_API_BASE_URL=https://drive.varnion.id/api
 ```
 
@@ -151,7 +150,7 @@ menyimpannya di `share_link` pada node:
 
 ## Tanggung jawab server
 
-Mock server ([`src/api/mock/mock-api.ts`](../src/api/mock/mock-api.ts)) adalah referensi perilaku yang diharapkan:
+Perilaku yang diharapkan dari backend:
 
 1. **RBAC + ACL** — peran sistem & workspace serta aturan akses folder/file di [`src/lib/rbac.ts`](../src/lib/rbac.ts). Admin = Pengelola di semua workspace; Auditor = Pelihat di semua workspace + boleh melihat seluruh log; Anggota = sesuai keanggotaan & aturan akses. UI hanya menyembunyikan/mengunci tombol — **server wajib menolak** aksi tanpa izin (403).
 2. **Visibilitas** — `GET /nodes` hanya node yang boleh dilihat (lihat bagian ACL; termasuk item di sampah dengan `deleted_at`). `GET /activity` hanya log yang boleh dilihat: Admin/Auditor semua; Anggota log miliknya sendiri + log di workspace tempat ia menjadi anggota, kecuali log tentang folder/file yang disembunyikan darinya.
@@ -163,7 +162,7 @@ Mock server ([`src/api/mock/mock-api.ts`](../src/api/mock/mock-api.ts)) adalah r
    `meta.fromWorkspaceId` agar terlihat oleh anggota workspace asal maupun tujuan. Nama yang bentrok di
    tujuan diberi akhiran otomatis, mis. `Laporan (1).pdf`.
 6. **Validasi nama** — aturan di [`src/lib/validation.ts`](../src/lib/validation.ts) (tidak kosong, maks. 120 karakter, tanpa `\ / : * ? " < > |`, unik di folder yang sama, tidak peka huruf besar/kecil).
-7. **Pencatatan "membuka"** — sebaiknya di-dedupe (mock: sekali per user per item per 10 menit).
+7. **Pencatatan "membuka"** — sebaiknya di-dedupe (mis. sekali per user per item per 10 menit).
 
 ## Catatan skala
 

@@ -3,7 +3,7 @@ const MAX_NAME_LENGTH = 120
 
 /**
  * Validasi nama file/folder/workspace. Mengembalikan pesan error atau `null`.
- * Dipakai form (umpan balik instan) dan mock server; backend sebaiknya
+ * Dipakai form (umpan balik instan); backend wajib
  * menerapkan aturan yang sama.
  */
 export function validateName(

@@ -3,6 +3,7 @@ import type {
   ActivityLog,
   DriveNode,
   NodePermissions,
+  Permission,
   SystemRole,
   User,
   WorkspaceRole,
@@ -45,6 +46,18 @@ export const WORKSPACE_ROLE_PERMISSIONS: Record<WorkspaceRole, WorkspacePermissi
   viewer: ['workspace.view'],
 }
 
+/**
+ * Izin sistem UI → izin RBAC backend yang dibutuhkan. Sumber kebenaran adalah
+ * `user.permissions` dari backend (respons login / `/auth/me`).
+ */
+export const SYSTEM_PERMISSION_REQUIRES: Record<SystemPermission, Permission> = {
+  'users.view': 'members.view',
+  'users.manage': 'members.manage',
+  'workspace.create': 'workspace.manage',
+  'audit.viewAll': 'audit.view',
+}
+
+/** Cadangan bila user tidak membawa daftar izin (mis. data lama). */
 export const SYSTEM_ROLE_PERMISSIONS: Record<SystemRole, SystemPermission[]> = {
   admin: ['users.view', 'users.manage', 'workspace.create', 'audit.viewAll'],
   auditor: ['users.view', 'audit.viewAll'],
@@ -203,8 +216,19 @@ export function can(
   return WORKSPACE_ROLE_PERMISSIONS[role].includes(permission)
 }
 
+/** Cek izin RBAC backend secara langsung, mis. `hasPermission(me, 'file.upload')`. */
+export function hasPermission(user: User | null | undefined, permission: Permission): boolean {
+  return !!user?.permissions?.includes(permission)
+}
+
+/** true bila user memiliki salah satu peran backend, mis. `hasRole(me, 'admin')`. */
+export function hasRole(user: User | null | undefined, ...roles: string[]): boolean {
+  return !!user?.roles?.some((r) => roles.includes(r))
+}
+
 export function canSystem(user: User | null | undefined, permission: SystemPermission): boolean {
   if (!user) return false
+  if (user.permissions?.length) return hasPermission(user, SYSTEM_PERMISSION_REQUIRES[permission])
   return SYSTEM_ROLE_PERMISSIONS[user.role].includes(permission)
 }
 
@@ -213,8 +237,7 @@ export function canAccessWorkspace(user: User | null | undefined, workspace: Dri
 }
 
 /**
- * Izin efektif user pada sebuah node — aturan yang WAJIB diterapkan server
- * (mock server memakainya langsung):
+ * Izin efektif user pada sebuah node — aturan yang WAJIB diterapkan server:
  *
  * 1. Administrator & Pengelola workspace → akses penuh (tidak bisa terkunci).
  * 2. Cari aturan akses mulai dari node itu sendiri lalu naik ke folder induk;

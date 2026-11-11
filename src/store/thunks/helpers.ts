@@ -1,9 +1,8 @@
 import { createAsyncThunk } from '@reduxjs/toolkit'
-import { setAuthToken, toSerializedError, type SerializedApiError } from '@/api'
+import { clearAuthTokens, getAuthTokens, toSerializedError, type SerializedApiError } from '@/api'
 import type { AppDispatch, RootState } from '../index'
-import { authActions } from '../slices/authSlice'
+import { loggedOut } from '../auth/authActions'
 import { uiActions, type Toast } from '../slices/uiSlice'
-import { syncActivity } from './activity'
 
 export interface ThunkConfig {
   state: RootState
@@ -19,10 +18,12 @@ export function notify(dispatch: AppDispatch, title: string, tone: Toast['tone']
 
 /** Akhiri sesi di sisi client (logout, token kedaluwarsa, akun dinonaktifkan). */
 export function endSession(dispatch: AppDispatch, reason?: string) {
-  setAuthToken(null)
+  // sesi sudah diakhiri sebelumnya (mis. refresh token ditolak, lalu request aslinya ikut 401) → jangan toast dua kali
+  const active = !!getAuthTokens()
+  clearAuthTokens()
   window.history.replaceState(null, '', window.location.pathname + window.location.search)
-  dispatch(authActions.loggedOut())
-  if (reason) notify(dispatch, 'Sesi berakhir', 'info', reason)
+  dispatch(loggedOut())
+  if (reason && active) notify(dispatch, 'Sesi berakhir', 'info', reason)
 }
 
 /**
@@ -51,7 +52,6 @@ export function createMutation<Result, Arg = void>(
   return createAsyncThunk<Result, Arg, ThunkConfig>(typePrefix, async (arg, { dispatch, getState, rejectWithValue }) => {
     try {
       const result = await run(arg, { dispatch, getState })
-      void dispatch(syncActivity())
       return result
     } catch (error) {
       return rejectWithValue(handleApiError(dispatch, error, errorTitle))

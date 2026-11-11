@@ -3,22 +3,61 @@
  * Daftar endpoint & bentuk payload: docs/backend-integration.md
  */
 import type { DriveApi } from '../contract'
-import type { AccessEntry, ActivityLog, DriveNode, PublicShare, User } from '@/types/drive'
+import type { AccessEntry, ActivityLog, DriveNode, PublicShare } from '@/types/drive'
 import { createHttpClient } from './client'
+import type { AuthUserDto, LoginRequestDto, LoginResponseDto, LogoutResponseDto, MeDto, RefreshRequestDto, RefreshResponseDto } from '@/types/auth'
+import { mapUser } from './user-mapper'
+import type { PageQuery, RbacPermissionDto, RbacRoleDto } from '@/types/rbac'
+import type { UserDto, UserListQuery } from '@/types/user'
+
+/** Identitas aplikasi & workspace untuk login (lihat .env.example). */
+const CLIENT_ID = import.meta.env.VITE_AUTH_CLIENT_ID ?? 'web_browser'
+const WORKSPACE_ID = import.meta.env.VITE_WORKSPACE_ID ?? '00000000-0000-0000-0000-000000000001'
+
 
 const enc = encodeURIComponent
+
+/** `PageQuery` → query string backend (`search` kosong tidak dikirim). */
+const pageParams = ({ page, perPage, search }: PageQuery) => ({
+  page,
+  per_page: perPage,
+  search: search.trim() || undefined,
+})
 
 export function createHttpApi(baseUrl: string): DriveApi {
   const http = createHttpClient(baseUrl)
 
   return {
     // Autentikasi
-    login: (input) => http.post('/auth/login', input),
-    logout: () => http.post('/auth/logout'),
-    getMe: () => http.get<User>('/auth/me'),
+    login: async ({ email, password, rememberMe }) => {
+      // body dikirim snake_case: client_id, email, password, remember_me, workspace_id
+      const body: LoginRequestDto = { clientId: CLIENT_ID, email, password, rememberMe, workspaceId: WORKSPACE_ID }
+      const res = await http.post<LoginResponseDto>('/auth/login', body, { skipRefresh: true })
+      return {
+        accessToken: res.accessToken,
+        refreshToken: res.refreshToken ?? null,
+        tokenType: res.tokenType ?? 'Bearer',
+        expiresIn: res.expiresIn ?? 0,
+        user: mapUser(res.user),
+      }
+    },
+    logout: () => http.post<LogoutResponseDto>('/auth/logout', undefined, { skipRefresh: true }),
+    refreshToken: (input: RefreshRequestDto) =>
+      http.post<RefreshResponseDto>('/auth/refresh', input, { skipRefresh: true }),
+    getMe: () => http.get<MeDto>('/auth/me'),
+
+    // RBAC
+    listRoles: (query) => http.getPage<RbacRoleDto>('/rbac/roles', pageParams(query)),
+    listPermissions: (query) => http.getPage<RbacPermissionDto>('/rbac/permissions', pageParams(query)),
 
     // Data
-    listUsers: () => http.get<User[]>('/users'),
+    listUsers: async () => (await http.get<AuthUserDto[]>('/users')).map(mapUser),
+    listUsersPaged: (query: UserListQuery) =>
+      http.getPage<UserDto>('/users', {
+        ...pageParams(query),
+        status: query.status || undefined,
+        role: query.role || undefined,
+      }),
     listNodes: () => http.get<DriveNode[]>('/nodes'),
     listActivity: (query = {}) => http.get<ActivityLog[]>('/activity', { since: query.since, limit: query.limit }),
 

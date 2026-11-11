@@ -1,8 +1,7 @@
-import { Activity, LogOut, Monitor, Moon, RotateCcw, ShieldCheck, Sun } from 'lucide-react'
-import { api } from '@/api'
+import { Activity, LogOut, Monitor, Moon, ShieldCheck, Sun } from 'lucide-react'
 import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { uiActions, type Theme } from '@/store/slices/uiSlice'
-import { logout, navigate, resetDemoData } from '@/store/thunks'
+import { logout, navigate } from '@/store/thunks'
 import { useCurrentUser } from '@/hooks/use-drive'
 import { formatDateTime } from '@/lib/format'
 import { UserAvatar } from '@/components/common/user-avatar'
@@ -75,12 +74,6 @@ export function UserMenu() {
             </DropdownMenuRadioGroup>
           </DropdownMenuSubContent>
         </DropdownMenuSub>
-        {api.resetDemo && (
-          <DropdownMenuItem onSelect={() => void dispatch(resetDemoData())}>
-            <RotateCcw />
-            Reset data demo
-          </DropdownMenuItem>
-        )}
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onSelect={() => void dispatch(logout())}>
           <LogOut />

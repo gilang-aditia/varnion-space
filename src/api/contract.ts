@@ -2,9 +2,7 @@
  * Kontrak antara frontend dan backend.
  *
  * Seluruh UI hanya berbicara dengan `DriveApi` ini (lewat Redux thunk).
- * Ada dua implementasi:
- *   - `mock/mock-api.ts`  → simulasi server di browser (default, untuk slicing/demo)
- *   - `http/http-api.ts`  → REST API sungguhan (lihat docs/backend-integration.md)
+ * Implementasinya `http/http-api.ts` → REST API (lihat docs/backend-integration.md).
  *
  * Aturan yang WAJIB dipenuhi implementasi mana pun (termasuk backend):
  *   - Aktor ditentukan dari token sesi, bukan dari data yang dikirim client.
@@ -24,19 +22,26 @@ import type {
   WorkspaceColor,
   WorkspaceRole,
 } from '@/types/drive'
+import type { LogoutResponseDto, MeDto, RefreshRequestDto, RefreshResponseDto } from '@/types/auth'
+import type { PageQuery, Paginated, RbacPermissionDto, RbacRoleDto } from '@/types/rbac'
+import type { UserDto, UserListQuery } from '@/types/user'
 
 /* --------------------------------- Inputs --------------------------------- */
 
 export interface LoginInput {
-  /** Email atau username. */
-  identifier: string
+  email: string
   password: string
-  /** Deskripsi perangkat untuk log (opsional; server boleh membaca User-Agent). */
-  device?: string
+  /** true → backend memberi refresh token berumur panjang. */
+  rememberMe: boolean
 }
 
 export interface LoginResponse {
-  token: string
+  /** JWT untuk header `Authorization: Bearer …`. */
+  accessToken: string
+  refreshToken: string | null
+  tokenType: string
+  /** Umur access token (detik). */
+  expiresIn: number
   user: User
 }
 
@@ -86,11 +91,23 @@ export interface DownloadInfo {
 export interface DriveApi {
   // Autentikasi
   login(input: LoginInput): Promise<LoginResponse>
-  logout(): Promise<void>
-  getMe(): Promise<User>
+  /** POST /auth/logout — mencabut token di server; mengembalikan pesan dari backend. */
+  logout(): Promise<LogoutResponseDto>
+  /** POST /auth/refresh — tukar refresh token dengan access token baru. */
+  refreshToken(input: RefreshRequestDto): Promise<RefreshResponseDto>
+  /** GET /auth/me — profil + roles/permissions user aktif (respons mentah). */
+  getMe(): Promise<MeDto>
+
+  // RBAC
+  /** GET /rbac/roles?page=&per_page=&search= — semua peran + izinnya. */
+  listRoles(query: PageQuery): Promise<Paginated<RbacRoleDto>>
+  /** GET /rbac/permissions?page=&per_page=&search= — semua izin sistem. */
+  listPermissions(query: PageQuery): Promise<Paginated<RbacPermissionDto>>
 
   // Data awal / sinkronisasi
   listUsers(): Promise<User[]>
+  /** GET /users?page=&per_page=&search=&status=&role= — daftar pengguna berpaginasi (respons mentah). */
+  listUsersPaged(query: UserListQuery): Promise<Paginated<UserDto>>
   /** Semua node (workspace, folder, file — termasuk yang di sampah) yang dapat diakses aktor. */
   listNodes(): Promise<DriveNode[]>
   listActivity(query?: ActivityQuery): Promise<ActivityLog[]>
@@ -139,9 +156,6 @@ export interface DriveApi {
   // Pengguna (admin)
   createUser(input: CreateUserInput): Promise<User>
   updateUser(id: string, input: UpdateUserInput): Promise<User>
-
-  /** Khusus mode mock: kembalikan data contoh ke kondisi awal. */
-  resetDemo?(): Promise<void>
 }
 
 /* --------------------------------- Errors --------------------------------- */

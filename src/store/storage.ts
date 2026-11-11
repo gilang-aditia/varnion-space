@@ -1,21 +1,20 @@
 /**
  * Penyimpanan di browser khusus state milik client: sesi login, preferensi
  * tampilan, dan identifier yang diingat. Data drive TIDAK disimpan di sini —
- * itu milik server (atau mock server di src/api/mock).
+ * itu milik server.
  */
+
+import type { AuthSession } from './auth/authTypes'
 
 const SESSION_KEY = 'varnion-drive:session'
 const PREFS_KEY = 'varnion-drive:prefs'
 const REMEMBERED_ID_KEY = 'varnion-drive:remembered-identifier'
 
-export interface StoredSession {
-  token: string
-  userId: string
-  /** true → localStorage (bertahan setelah browser ditutup), false → sessionStorage. */
-  remember: boolean
-  startedAt: string
-  device: string
-}
+/**
+ * Metadata sesi (tanpa token). Token JWT disimpan terpisah di cookie —
+ * lihat `src/api/token.ts`. remember = true → localStorage, false → sessionStorage.
+ */
+export type StoredSession = AuthSession
 
 export interface StoredPrefs {
   viewMode?: 'grid' | 'list'
@@ -48,7 +47,7 @@ function write(storage: Storage | undefined, key: string, value: unknown) {
 
 export function loadSession(): StoredSession | null {
   const stored = read<StoredSession>(local, SESSION_KEY) ?? read<StoredSession>(session, SESSION_KEY)
-  return stored?.token && stored.userId ? stored : null
+  return stored?.userId ? stored : null
 }
 
 export function saveSession(value: StoredSession | null) {

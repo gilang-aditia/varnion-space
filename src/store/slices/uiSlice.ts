@@ -1,6 +1,6 @@
 import { createSlice, nanoid, type PayloadAction } from '@reduxjs/toolkit'
 import type { SortKey } from '@/lib/node-utils'
-import { authActions } from './authSlice'
+import { loggedOut } from '../auth/authActions'
 
 /* --------------------------------- Route --------------------------------- */
 
@@ -165,7 +165,7 @@ const uiSlice = createSlice({
   },
   extraReducers: (builder) => {
     // Keluar → bersihkan state navigasi; preferensi (tema, mode tampilan) tetap.
-    builder.addCase(authActions.loggedOut, (state) => ({
+    builder.addCase(loggedOut, (state) => ({
       ...initialState,
       viewMode: state.viewMode,
       theme: state.theme,

@@ -1,6 +1,6 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
 import type { User } from '@/types/drive'
-import { authActions } from './authSlice'
+import { loggedOut } from '../auth/authActions'
 
 /** Cache profil pengguna dari API. */
 export interface UsersState {
@@ -21,7 +21,7 @@ const usersSlice = createSlice({
     },
   },
   extraReducers: (builder) => {
-    builder.addCase(authActions.loggedOut, () => initialState)
+    builder.addCase(loggedOut, () => initialState)
   },
 })
 

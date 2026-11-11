@@ -1,6 +1,13 @@
 import { configureStore, type ThunkAction, type UnknownAction } from '@reduxjs/toolkit'
-import { setAuthToken } from '@/api'
-import authReducer, { type AuthState } from './slices/authSlice'
+import { clearAuthTokens, getAuthTokens, setRefreshHandler } from '@/api'
+import { isTokenExpired } from '@/lib/jwt'
+import authReducer, { authStateFromSession } from './auth/authSlice'
+import meReducer from './me/meSlice'
+import logoutReducer from './logout/logoutSlice'
+import refreshReducer from './refresh/refreshSlice'
+import rbacReducer from './rbac/rbacSlice'
+import userListReducer from './userList/userListSlice'
+import { refreshAccessToken } from './refresh/refreshActions'
 import usersReducer from './slices/usersSlice'
 import driveReducer from './slices/driveSlice'
 import activityReducer from './slices/activitySlice'
@@ -9,14 +16,29 @@ import { loadPrefs, loadSession, savePrefs, saveSession } from './storage'
 
 /* ------------------------------ preload state ----------------------------- */
 
-const session = loadSession()
-setAuthToken(session?.token ?? null)
+/** Sesi dipulihkan hanya bila token masih ada & (access atau refresh token) belum kedaluwarsa. */
+function initialSession() {
+  const stored = loadSession()
+  const tokens = getAuthTokens()
+  const usable = !!tokens && (!isTokenExpired(tokens.accessToken, 0) || !isTokenExpired(tokens.refreshToken, 0))
+  if (stored && usable) return stored
+  if (tokens) clearAuthTokens()
+  if (stored) saveSession(null)
+  return null
+}
+
+const session = initialSession()
 
 const prefs = loadPrefs()
 
 export const store = configureStore({
   reducer: {
     auth: authReducer,
+    me: meReducer,
+    logout: logoutReducer,
+    refresh: refreshReducer,
+    rbac: rbacReducer,
+    userList: userListReducer,
     users: usersReducer,
     drive: driveReducer,
     activity: activityReducer,
@@ -24,7 +46,7 @@ export const store = configureStore({
   },
   preloadedState: {
     // Sesi tersimpan dipulihkan lewat `restoreSession()` saat App mount.
-    auth: { session, status: session ? 'restoring' : 'anonymous' } satisfies AuthState,
+    auth: authStateFromSession(session),
     ui: {
       ...uiReducer(undefined, { type: '@@init' }),
       viewMode: prefs.viewMode ?? 'grid',
@@ -33,6 +55,11 @@ export const store = configureStore({
     } satisfies UiState,
   },
 })
+
+/* ------------------------------ refresh token ----------------------------- */
+
+// http client memanggil ini saat access token kedaluwarsa / dibalas 401
+setRefreshHandler(async () => refreshAccessToken.fulfilled.match(await store.dispatch(refreshAccessToken())))
 
 /* ------------------------------ persistence ------------------------------ */
 

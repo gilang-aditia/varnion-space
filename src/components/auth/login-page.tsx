@@ -1,8 +1,10 @@
 import { useRef, useState, type FocusEvent, type FormEvent } from "react";
 import { Eye, EyeOff, LoaderCircle, Lock, Mail } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { demoLogin, type SerializedApiError } from "@/api";
-import { useAppDispatch } from "@/store/hooks";
+import { isValidEmail } from "@/lib/validation";
+import type { SerializedApiError } from "@/api";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { selectLoginPending } from "@/store/auth";
 import { login } from "@/store/thunks";
 import { loadRememberedIdentifier } from "@/store/storage";
 import { uiActions } from "@/store/slices/uiSlice";
@@ -10,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Logo, LogoMark } from "@/components/common/logo";
-import { UserAvatar } from "@/components/common/user-avatar";
 import { LoginBlobs, type BlobMood } from "./login-blobs";
 
 /* ------------------------------- Panel karakter ------------------------------- */
@@ -58,7 +59,7 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(!!remembered);
   const [showPassword, setShowPassword] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const loading = useAppSelector(selectLoginPending);
   const [error, setError] = useState<{
     field: "identifier" | "password";
     message: string;
@@ -82,24 +83,21 @@ export function LoginPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!identifier.trim())
-      return setError({
-        field: "identifier",
-        message: "Masukkan email atau username.",
-      });
+      return setError({ field: "identifier", message: "Masukkan email." });
+    if (!isValidEmail(identifier))
+      return setError({ field: "identifier", message: "Format email tidak valid." });
     if (!password)
       return setError({ field: "password", message: "Masukkan kata sandi." });
-    setLoading(true);
     setError(null);
     try {
-      await dispatch(login({ identifier, password, remember })).unwrap();
+      await dispatch(login({ email: identifier, password, remember })).unwrap();
       // berhasil → App beralih ke halaman utama
     } catch (err) {
       const apiError = err as SerializedApiError;
       setError({
-        field: apiError.field === "identifier" ? "identifier" : "password",
+        field: apiError.field === "email" || apiError.field === "identifier" ? "identifier" : "password",
         message: apiError.message,
       });
-      setLoading(false);
     }
   };
 
@@ -123,17 +121,19 @@ export function LoginPage() {
             Masuk ke akun Anda
           </h1>
           <p className="mt-1.5 text-sm text-muted-foreground">
-            Gunakan email atau username perusahaan Anda.
+            Gunakan email perusahaan Anda.
           </p>
 
           <form onSubmit={submit} className="mt-8 grid gap-4" noValidate>
             <div className="grid gap-1.5">
-              <Label htmlFor="identifier">Email atau username</Label>
+              <Label htmlFor="identifier">Email</Label>
               <div className="relative" {...trackFocus("identifier")}>
                 <Mail className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
                 <input
                   ref={identifierRef}
                   id="identifier"
+                  type="email"
+                  inputMode="email"
                   autoComplete="username"
                   autoFocus={!remembered}
                   value={identifier}
@@ -244,48 +244,6 @@ export function LoginPage() {
             </Button>
           </form>
 
-          {demoLogin.accounts.length > 0 && (
-            <div className="mt-8 rounded-2xl border bg-muted/30 p-3">
-              <div className="mb-2 flex items-center justify-between px-1">
-                <p className="text-xs font-semibold">Akun demo</p>
-                <p className="text-[11px] text-muted-foreground">
-                  kata sandi:{" "}
-                  <code className="rounded bg-muted px-1 font-mono">
-                    {demoLogin.password}
-                  </code>
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-1.5">
-                {demoLogin.accounts.map((account) => (
-                  <button
-                    key={account.username}
-                    type="button"
-                    onClick={() => {
-                      setIdentifier(account.username);
-                      setPassword(demoLogin.password);
-                      setError(null);
-                    }}
-                    className={cn(
-                      "flex items-center gap-2 rounded-xl border bg-background p-2 text-left transition hover:border-primary/40 hover:bg-primary/5",
-                      identifier === account.username &&
-                        "border-primary/50 bg-primary/5",
-                    )}
-                    title={account.hint}
-                  >
-                    <UserAvatar user={account} size="sm" />
-                    <span className="min-w-0">
-                      <span className="block truncate text-xs font-medium">
-                        {account.name}
-                      </span>
-                      <span className="block truncate text-[11px] text-muted-foreground">
-                        {account.label}
-                      </span>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
         <p className="text-center text-xs text-muted-foreground">
           © {new Date().getFullYear()} Varnion Space

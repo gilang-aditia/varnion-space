@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { Activity, Files, HardDrive, LayoutGrid, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { WORKSPACE_COLORS } from "@/lib/colors";
-import { firstName, formatBytes, formatRelative } from "@/lib/format";
+import { formatBytes, formatRelative } from "@/lib/format";
 import { ACTIVITY_META } from "@/lib/activity";
 import { getWorkspaceRole } from "@/lib/rbac";
 import { vtName } from "@/lib/view-transition";
@@ -214,7 +214,7 @@ export function HomeView() {
         <div>
           <p className="text-sm text-muted-foreground">{greeting()},</p>
           <h1 className="text-2xl font-semibold tracking-tight">
-            {me ? firstName(me.name) : ""} 👋
+            {me?.name ?? ""} 👋
           </h1>
         </div>
         {perms.canSystem("workspace.create") && (

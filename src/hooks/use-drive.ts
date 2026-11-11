@@ -1,10 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useAppSelector } from '@/store/hooks'
+import type { Permission } from '@/types/drive'
 import { selectCurrentUser } from '@/store/selectors'
 import {
   can,
   canSystem,
   getWorkspaceRole,
+  hasPermission,
+  hasRole,
   nodePermissions,
   type SystemPermission,
   type WorkspacePermission,
@@ -28,6 +31,9 @@ export function usePermissions(workspaceId?: string | null) {
       role: getWorkspaceRole(user, ws),
       can: (p: WorkspacePermission) => can(user, ws, p),
       canSystem: (p: SystemPermission) => canSystem(user, p),
+      /** Izin RBAC backend mentah, mis. `perms.has('file.upload')`. */
+      has: (p: Permission) => hasPermission(user, p),
+      hasRole: (...roles: string[]) => hasRole(user, ...roles),
     }),
     [user, ws],
   )

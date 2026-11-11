@@ -6,13 +6,44 @@ export type WorkspaceRole = 'manager' | 'editor' | 'viewer'
 
 export type UserStatus = 'active' | 'inactive'
 
+/**
+ * Izin RBAC dari backend (`user.permissions` di respons login / `/auth/me`).
+ * `string & {}` → izin baru dari backend tetap diterima tanpa mengubah tipe.
+ */
+export type Permission =
+  | 'audit.view'
+  | 'file.delete'
+  | 'file.download'
+  | 'file.share'
+  | 'file.update'
+  | 'file.upload'
+  | 'file.version.restore'
+  | 'file.version.view'
+  | 'file.view'
+  | 'folder.create'
+  | 'folder.delete'
+  | 'folder.update'
+  | 'folder.view'
+  | 'members.manage'
+  | 'members.view'
+  | 'roles.manage'
+  | 'storage.manage'
+  | 'workspace.manage'
+  | 'workspace.view'
+  | (string & {})
+
 /** Profil pengguna seperti yang dikirim API (tanpa data rahasia). */
 export interface User {
   id: string
   name: string
   email: string
   username: string
+  /** Peran utama (diturunkan dari `roles`) — dipakai untuk label & aturan workspace. */
   role: SystemRole
+  /** Peran mentah dari backend, mis. `["admin"]`. */
+  roles: string[]
+  /** Izin RBAC dari backend. Kosong untuk user lain (mis. dari `/users`). */
+  permissions: Permission[]
   status: UserStatus
   title: string
   avatarColor: AvatarColor
