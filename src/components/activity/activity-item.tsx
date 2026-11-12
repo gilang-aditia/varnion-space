@@ -1,80 +1,113 @@
-import type { ReactNode } from 'react'
-import { Monitor } from 'lucide-react'
-import { cn } from '@/lib/utils'
-import { ACTIVITY_META, KIND_LABEL } from '@/lib/activity'
-import { formatDateTime, formatRelative, formatTime } from '@/lib/format'
-import { SYSTEM_ROLE_LABEL, WORKSPACE_ROLE_LABEL } from '@/lib/rbac'
-import { WORKSPACE_COLORS } from '@/lib/colors'
-import { useAppDispatch, useAppSelector } from '@/store/hooks'
-import { isInTrash, selectAccessibleWorkspaceIds } from '@/store/selectors'
-import { openNode } from '@/store/thunks'
-import { useCurrentUser } from '@/hooks/use-drive'
-import type { ActivityLog, SystemRole, WorkspaceRole } from '@/types/drive'
-import { UserAvatar } from '@/components/common/user-avatar'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import type { ReactNode } from "react";
+import { Monitor, type LucideIcon } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { ACTIVITY_META, KIND_LABEL } from "@/lib/activity";
+import { formatDateTime, formatRelative, formatTime } from "@/lib/format";
+import { SYSTEM_ROLE_LABEL, WORKSPACE_ROLE_LABEL } from "@/lib/rbac";
+import { WORKSPACE_COLORS } from "@/lib/colors";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { isInTrash, selectAccessibleWorkspaceIds } from "@/store/selectors";
+import { openNode } from "@/store/thunks";
+import { useCurrentUser } from "@/hooks/use-drive";
+import type {
+  ActivityLog,
+  SystemRole,
+  User,
+  WorkspaceRole,
+} from "@/types/drive";
+import { UserAvatar } from "@/components/common/user-avatar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
-const wsRole = (r?: string) => (r ? (WORKSPACE_ROLE_LABEL[r as WorkspaceRole] ?? r) : '')
-const sysRole = (r?: string) => (r ? (SYSTEM_ROLE_LABEL[r as SystemRole] ?? r) : '')
+const wsRole = (r?: string) =>
+  r ? (WORKSPACE_ROLE_LABEL[r as WorkspaceRole] ?? r) : "";
+const sysRole = (r?: string) =>
+  r ? (SYSTEM_ROLE_LABEL[r as SystemRole] ?? r) : "";
 
 function Strong({ children }: { children: ReactNode }) {
-  return <span className="font-medium text-foreground">{children}</span>
+  return <span className="font-medium text-foreground">{children}</span>;
 }
 
 /** Nama target yang bisa diklik untuk membuka item (bila masih ada & dapat diakses). */
 function TargetLink({ log }: { log: ActivityLog }) {
-  const dispatch = useAppDispatch()
-  const node = useAppSelector((s) => (log.targetId ? s.drive.nodes[log.targetId] : undefined))
-  const nodes = useAppSelector((s) => s.drive.nodes)
-  const accessible = useAppSelector(selectAccessibleWorkspaceIds)
-  const name = log.targetName ?? node?.name ?? 'item'
-  const openable = node && accessible.has(node.workspaceId) && !isInTrash(nodes, node.id)
-  if (!openable) return <Strong>{name}</Strong>
+  const dispatch = useAppDispatch();
+  const node = useAppSelector((s) =>
+    log.targetId ? s.drive.nodes[log.targetId] : undefined,
+  );
+  const nodes = useAppSelector((s) => s.drive.nodes);
+  const accessible = useAppSelector(selectAccessibleWorkspaceIds);
+  const name = log.targetName ?? node?.name ?? "item";
+  const openable =
+    node && accessible.has(node.workspaceId) && !isInTrash(nodes, node.id);
+  if (!openable) return <Strong>{name}</Strong>;
   return (
     <button
       onClick={(e) => {
-        e.stopPropagation()
-        dispatch(openNode(node.id))
+        e.stopPropagation();
+        dispatch(openNode(node.id));
       }}
       className="font-medium text-foreground underline-offset-2 hover:text-primary hover:underline"
     >
       {name}
     </button>
-  )
+  );
 }
 
 /** Kalimat deskripsi aktivitas. */
-function ActivitySentence({ log, actorName }: { log: ActivityLog; actorName: ReactNode }) {
+function ActivitySentence({
+  log,
+  actorName,
+}: {
+  log: ActivityLog;
+  actorName: ReactNode;
+}) {
   const fromWorkspace = useAppSelector((s) =>
-    log.meta?.fromWorkspaceId ? s.drive.nodes[log.meta.fromWorkspaceId]?.name : undefined,
-  )
-  const m = log.meta ?? {}
-  const kind = log.targetKind ? KIND_LABEL[log.targetKind] : 'item'
-  const target = <TargetLink log={log} />
-  const subject = <Strong>{m.subjectName ?? 'pengguna'}</Strong>
+    log.meta?.fromWorkspaceId
+      ? s.drive.nodes[log.meta.fromWorkspaceId]?.name
+      : undefined,
+  );
+  const m = log.meta ?? {};
+  const kind = log.targetKind ? KIND_LABEL[log.targetKind] : "item";
+  const target = <TargetLink log={log} />;
+  const subject = <Strong>{m.subjectName ?? "pengguna"}</Strong>;
 
-  let body: ReactNode
+  let body: ReactNode;
   switch (log.action) {
-    case 'login':
-      body = <>masuk ke sistem</>
-      break
-    case 'logout':
-      body = <>keluar dari sistem</>
-      break
-    case 'login_failed':
+    case "login":
+      body = <>masuk ke sistem</>;
+      break;
+    case "logout":
+      body = <>keluar dari sistem</>;
+      break;
+    case "login_failed":
       if (!log.actorId)
         return (
           <>
             Percobaan masuk sebagai <Strong>{m.identifier}</Strong> gagal
-            {m.reason && <span className="text-destructive"> — {m.reason.toLowerCase()}</span>}
+            {m.reason && (
+              <span className="text-destructive">
+                {" "}
+                — {m.reason.toLowerCase()}
+              </span>
+            )}
           </>
-        )
+        );
       body = (
         <>
-          gagal masuk{m.reason && <span className="text-destructive"> — {m.reason.toLowerCase()}</span>}
+          gagal masuk
+          {m.reason && (
+            <span className="text-destructive">
+              {" "}
+              — {m.reason.toLowerCase()}
+            </span>
+          )}
         </>
-      )
-      break
-    case 'open':
+      );
+      break;
+    case "open":
       body = m.version ? (
         <>
           membuka <Strong>versi {m.version}</Strong> dari file {target}
@@ -83,184 +116,276 @@ function ActivitySentence({ log, actorName }: { log: ActivityLog; actorName: Rea
         <>
           membuka {kind} {target}
         </>
-      )
-      break
-    case 'download':
+      );
+      break;
+    case "download":
       body = (
         <>
           mengunduh {target}
-          {m.version && <span className="text-muted-foreground"> (versi {m.version})</span>}
+          {m.version && (
+            <span className="text-muted-foreground"> (versi {m.version})</span>
+          )}
         </>
-      )
-      break
-    case 'create':
+      );
+      break;
+    case "create":
       body = (
         <>
           membuat {kind} {target}
           {m.parentName && (
             <>
-              {' '}
+              {" "}
               di <Strong>{m.parentName}</Strong>
             </>
           )}
         </>
-      )
-      break
-    case 'upload':
+      );
+      break;
+    case "upload":
       body = (
         <>
           mengunggah {target}
           {m.parentName && (
             <>
-              {' '}
+              {" "}
               ke <Strong>{m.parentName}</Strong>
             </>
           )}
         </>
-      )
-      break
-    case 'edit':
+      );
+      break;
+    case "edit":
       body = (
         <>
           mengedit {target}
-          {m.version && <span className="text-muted-foreground"> (versi {m.version})</span>}
-          {m.note && <span className="text-muted-foreground italic"> — “{m.note}”</span>}
+          {m.version && (
+            <span className="text-muted-foreground"> (versi {m.version})</span>
+          )}
+          {m.note && (
+            <span className="text-muted-foreground italic"> — “{m.note}”</span>
+          )}
         </>
-      )
-      break
-    case 'version_restore':
+      );
+      break;
+    case "version_restore":
       body = (
         <>
           memulihkan {target} ke <Strong>versi {m.restoredFrom}</Strong>
-          <span className="text-muted-foreground"> (disimpan sebagai versi {m.version})</span>
+          <span className="text-muted-foreground">
+            {" "}
+            (disimpan sebagai versi {m.version})
+          </span>
         </>
-      )
-      break
-    case 'rename':
+      );
+      break;
+    case "rename":
       body = (
         <>
           mengganti nama <Strong>{m.from}</Strong> menjadi {target}
         </>
-      )
-      break
-    case 'move':
+      );
+      break;
+    case "move":
       body = (
         <>
           memindahkan {kind} {target}
           {m.from && (
             <>
-              {' '}
+              {" "}
               dari <Strong>{m.from}</Strong>
             </>
-          )}{' '}
+          )}{" "}
           ke <Strong>{m.to}</Strong>
           {m.fromWorkspaceId && (
             <span className="text-muted-foreground">
-              {' '}
-              (antar workspace{fromWorkspace ? ` · dari ${fromWorkspace}` : ''})
+              {" "}
+              (antar workspace{fromWorkspace ? ` · dari ${fromWorkspace}` : ""})
             </span>
           )}
         </>
-      )
-      break
-    case 'delete':
+      );
+      break;
+    case "delete":
       body = (
         <>
-          menghapus {kind} {target} <span className="text-muted-foreground">(ke Sampah)</span>
+          menghapus {kind} {target}{" "}
+          <span className="text-muted-foreground">(ke Sampah)</span>
         </>
-      )
-      break
-    case 'restore':
+      );
+      break;
+    case "restore":
       body = (
         <>
           memulihkan {kind} {target}
         </>
-      )
-      break
-    case 'purge':
+      );
+      break;
+    case "purge":
       body = (
         <>
           menghapus permanen {kind} <Strong>{log.targetName}</Strong>
         </>
-      )
-      break
-    case 'member_add':
+      );
+      break;
+    case "member_add":
       body = (
         <>
-          menambahkan {subject} ke {target} sebagai <Strong>{wsRole(m.role)}</Strong>
+          menambahkan {subject} ke {target} sebagai{" "}
+          <Strong>{wsRole(m.role)}</Strong>
         </>
-      )
-      break
-    case 'member_role':
+      );
+      break;
+    case "member_role":
       body = (
         <>
-          mengubah peran {subject} di {target}: {wsRole(m.from)} → <Strong>{wsRole(m.to)}</Strong>
+          mengubah peran {subject} di {target}: {wsRole(m.from)} →{" "}
+          <Strong>{wsRole(m.to)}</Strong>
         </>
-      )
-      break
-    case 'member_remove':
+      );
+      break;
+    case "member_remove":
       body = (
         <>
           mengeluarkan {subject} dari {target}
         </>
-      )
-      break
-    case 'access_grant':
+      );
+      break;
+    case "access_grant":
       body = (
         <>
           mengatur akses {subject} pada {kind} {target}: <Strong>{m.to}</Strong>
         </>
-      )
-      break
-    case 'link_update':
+      );
+      break;
+    case "link_update":
       body = (
         <>
           mengatur link publik {kind} {target}: <Strong>{m.to}</Strong>
         </>
-      )
-      break
-    case 'link_view':
-    case 'link_download': {
-      const verb = log.action === 'link_view' ? 'membuka' : 'mengunduh'
+      );
+      break;
+    case "link_view":
+    case "link_download": {
+      const verb = log.action === "link_view" ? "membuka" : "mengunduh";
       const rest = (
         <>
-          {verb} {kind} {target} <span className="text-muted-foreground">lewat link publik</span>
+          {verb} {kind} {target}{" "}
+          <span className="text-muted-foreground">lewat link publik</span>
         </>
-      )
-      if (!log.actorId) return <>Pengunjung tanpa login {rest}</>
-      body = rest
-      break
+      );
+      if (!log.actorId) return <>Pengunjung tanpa login {rest}</>;
+      body = rest;
+      break;
     }
-    case 'access_revoke':
+    case "access_revoke":
       body = (
         <>
           mencabut akses khusus {subject} pada {kind} {target}
         </>
-      )
-      break
-    case 'user_create':
+      );
+      break;
+    case "user_create":
       body = (
         <>
           membuat akun {subject} sebagai <Strong>{sysRole(m.role)}</Strong>
         </>
-      )
-      break
-    case 'user_role':
+      );
+      break;
+    case "user_role":
       body = (
         <>
-          mengubah peran sistem {subject}: {sysRole(m.from)} → <Strong>{sysRole(m.to)}</Strong>
+          mengubah peran sistem {subject}: {sysRole(m.from)} →{" "}
+          <Strong>{sysRole(m.to)}</Strong>
         </>
-      )
-      break
-    case 'user_status':
-      body = m.to === 'inactive' ? <>menonaktifkan akun {subject}</> : <>mengaktifkan kembali akun {subject}</>
-      break
+      );
+      break;
+    case "user_status":
+      body =
+        m.to === "inactive" ? (
+          <>menonaktifkan akun {subject}</>
+        ) : (
+          <>mengaktifkan kembali akun {subject}</>
+        );
+      break;
   }
   return (
     <>
       {actorName} {body}
     </>
-  )
+  );
+}
+
+/**
+ * Tampilan satu baris aktivitas (avatar + ikon aksi, kalimat, waktu).
+ * Dipakai `ActivityItem` (log drive) dan log workspace dari API.
+ */
+export function ActivityItemView({
+  actor,
+  icon: Icon,
+  tone,
+  sentence,
+  at,
+  compact = false,
+  now,
+  extra,
+}: {
+  actor?:
+    | (Pick<User, "name" | "avatarColor"> &
+        Partial<Pick<User, "status" | "online">>)
+    | null;
+  icon: LucideIcon;
+  tone: string;
+  sentence: ReactNode;
+  at: string;
+  compact?: boolean;
+  now: number;
+  /** Info tambahan di baris waktu (mis. workspace, perangkat). */
+  extra?: ReactNode;
+}) {
+  return (
+    <div className={cn("group/act flex gap-3", compact ? "py-2" : "py-3")}>
+      <div className="relative shrink-0">
+        <UserAvatar user={actor} size={compact ? "sm" : "md"} />
+        <span
+          className={cn(
+            "absolute -right-1 -bottom-1 flex items-center justify-center rounded-full ring-2 ring-background",
+            compact ? "size-3.5 [&_svg]:size-2" : "size-4 [&_svg]:size-2.5",
+            tone,
+          )}
+        >
+          <Icon />
+        </span>
+      </div>
+      <div className="min-w-0 flex-1">
+        <p
+          className={cn(
+            "leading-snug text-muted-foreground",
+            compact ? "text-xs" : "text-sm",
+          )}
+        >
+          {sentence}
+        </p>
+        <div
+          className={cn(
+            "mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground",
+            compact ? "text-[11px]" : "text-xs",
+          )}
+        >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <time dateTime={at} className="tabular-nums">
+                {compact
+                  ? formatRelative(at, now)
+                  : `${formatTime(at)} · ${formatRelative(at, now)}`}
+              </time>
+            </TooltipTrigger>
+            <TooltipContent>{formatDateTime(at)}</TooltipContent>
+          </Tooltip>
+          {extra}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function ActivityItem({
@@ -269,57 +394,48 @@ export function ActivityItem({
   showWorkspace = true,
   now,
 }: {
-  log: ActivityLog
-  compact?: boolean
-  showWorkspace?: boolean
-  now: number
+  log: ActivityLog;
+  compact?: boolean;
+  showWorkspace?: boolean;
+  now: number;
 }) {
-  const me = useCurrentUser()
+  const me = useCurrentUser();
   const actor = useAppSelector((s) =>
-    log.actorId ? s.users.byId[log.actorId] : log.meta?.subjectUserId ? s.users.byId[log.meta.subjectUserId] : undefined,
-  )
-  const ws = useAppSelector((s) => (log.workspaceId ? s.drive.nodes[log.workspaceId] : undefined))
-  const meta = ACTIVITY_META[log.action]
-  const Icon = meta.icon
+    log.actorId
+      ? s.users.byId[log.actorId]
+      : log.meta?.subjectUserId
+        ? s.users.byId[log.meta.subjectUserId]
+        : undefined,
+  );
+  const ws = useAppSelector((s) =>
+    log.workspaceId ? s.drive.nodes[log.workspaceId] : undefined,
+  );
+  const meta = ACTIVITY_META[log.action];
   const actorName = log.actorId ? (
-    <Strong>{log.actorId === me?.id ? 'Anda' : (actor?.name ?? 'Pengguna terhapus')}</Strong>
-  ) : null
+    <Strong>
+      {log.actorId === me?.id ? "Anda" : (actor?.name ?? "Pengguna terhapus")}
+    </Strong>
+  ) : null;
 
   return (
-    <div className={cn('group/act flex gap-3', compact ? 'py-2' : 'py-3')}>
-      <div className="relative shrink-0">
-        <UserAvatar user={actor} size={compact ? 'sm' : 'md'} />
-        <span
-          className={cn(
-            'absolute -right-1 -bottom-1 flex items-center justify-center rounded-full ring-2 ring-background',
-            compact ? 'size-3.5 [&_svg]:size-2' : 'size-4 [&_svg]:size-2.5',
-            meta.tone,
-          )}
-        >
-          <Icon />
-        </span>
-      </div>
-      <div className="min-w-0 flex-1">
-        <p className={cn('leading-snug text-muted-foreground', compact ? 'text-xs' : 'text-sm')}>
-          <ActivitySentence log={log} actorName={actorName} />
-        </p>
-        <div
-          className={cn(
-            'mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-muted-foreground',
-            compact ? 'text-[11px]' : 'text-xs',
-          )}
-        >
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <time dateTime={log.at} className="tabular-nums">
-                {compact ? formatRelative(log.at, now) : `${formatTime(log.at)} · ${formatRelative(log.at, now)}`}
-              </time>
-            </TooltipTrigger>
-            <TooltipContent>{formatDateTime(log.at)}</TooltipContent>
-          </Tooltip>
+    <ActivityItemView
+      actor={actor}
+      icon={meta.icon}
+      tone={meta.tone}
+      sentence={<ActivitySentence log={log} actorName={actorName} />}
+      at={log.at}
+      compact={compact}
+      now={now}
+      extra={
+        <>
           {showWorkspace && ws && (
             <span className="inline-flex items-center gap-1">
-              <span className={cn('size-1.5 rounded-full', WORKSPACE_COLORS[ws.color ?? 'blue'].solid)} />
+              <span
+                className={cn(
+                  "size-1.5 rounded-full",
+                  WORKSPACE_COLORS[ws.color ?? "blue"].solid,
+                )}
+              />
               {ws.name}
             </span>
           )}
@@ -329,8 +445,8 @@ export function ActivityItem({
               {log.meta.device}
             </span>
           )}
-        </div>
-      </div>
-    </div>
-  )
+        </>
+      }
+    />
+  );
 }

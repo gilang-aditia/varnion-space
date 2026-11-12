@@ -21,7 +21,7 @@ export interface RawUser {
 const AVATAR_COLORS: AvatarColor[] = ['blue', 'violet', 'emerald', 'amber', 'rose', 'cyan', 'orange', 'slate']
 
 /** Warna avatar stabil per user (hash sederhana dari id). */
-function avatarColorOf(id: string): AvatarColor {
+export function avatarColorOf(id: string): AvatarColor {
   let hash = 0
   for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) | 0
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length]

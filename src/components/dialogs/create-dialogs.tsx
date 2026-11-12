@@ -1,12 +1,19 @@
-import { useState, type FormEvent } from 'react'
-import { Check, LoaderCircle } from 'lucide-react'
-import type { SerializedApiError } from '@/api'
-import { cn } from '@/lib/utils'
-import { WORKSPACE_COLORS } from '@/lib/colors'
-import { useAppDispatch } from '@/store/hooks'
+import { useEffect, useState, type FormEvent } from 'react'
+import { LoaderCircle } from 'lucide-react'
+import { useAppDispatch, useAppSelector } from '@/store/hooks'
 import { uiActions } from '@/store/slices/uiSlice'
-import { createWorkspace } from '@/store/thunks'
-import type { WorkspaceColor } from '@/types/drive'
+import { WORKSPACE_STATUS_OPTIONS } from '@/features/workspace/constants'
+import { createWorkspace } from '@/features/workspace/redux/createWorkspaceAction'
+import {
+  clearCreateWorkspaceError,
+  resetCreateWorkspaceState,
+} from '@/features/workspace/redux/createWorkspaceSlice'
+import { updateWorkspace } from '@/features/workspace/redux/updateWorkspaceAction'
+import {
+  clearUpdateWorkspaceError,
+  resetUpdateWorkspaceState,
+} from '@/features/workspace/redux/updateWorkspaceSlice'
+import type { WorkspaceData, WorkspaceStatus } from '@/features/workspace/redux/workspaceType'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -19,36 +26,64 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
-export function NewWorkspaceDialog() {
+/**
+ * Form workspace (nama, deskripsi, + status saat edit).
+ * - tanpa `workspace` → "Workspace baru" (POST /workspaces)
+ * - dengan `workspace` → "Edit workspace" (PUT /workspaces/{id})
+ */
+function WorkspaceFormDialog({ workspace }: { workspace?: WorkspaceData }) {
   const dispatch = useAppDispatch()
-  const [name, setName] = useState('')
-  const [description, setDescription] = useState('')
-  const [color, setColor] = useState<WorkspaceColor>('blue')
-  const [error, setError] = useState<string | null>(null)
-  const [saving, setSaving] = useState(false)
+  const editing = !!workspace
+  const create = useAppSelector((s) => s.createWorkspace)
+  const update = useAppSelector((s) => s.updateWorkspace)
+  const { loading, error } = editing ? update : create
+  const [name, setName] = useState(workspace?.name ?? '')
+  const [description, setDescription] = useState(workspace?.description ?? '')
+  const [status, setStatus] = useState<WorkspaceStatus>((workspace?.status as WorkspaceStatus) ?? 'active')
   const close = () => dispatch(uiActions.closeDialog())
+  const clearError = () => {
+    if (!error) return
+    dispatch(editing ? clearUpdateWorkspaceError() : clearCreateWorkspaceError())
+  }
+  const dirty =
+    !editing ||
+    name.trim() !== workspace.name ||
+    description.trim() !== (workspace.description ?? '') ||
+    status !== workspace.status
+
+  // dialog ditutup → bersihkan error/hasil sebelumnya
+  useEffect(
+    () => () => {
+      dispatch(resetCreateWorkspaceState())
+      dispatch(resetUpdateWorkspaceState())
+    },
+    [dispatch],
+  )
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    setSaving(true)
-    try {
-      await dispatch(createWorkspace({ name, description, color })).unwrap()
-      close()
-    } catch (err) {
-      const apiError = err as SerializedApiError
-      if (apiError.field) setError(apiError.message)
-      setSaving(false)
+    if (!name.trim()) return
+    if (!editing) {
+      const result = await dispatch(createWorkspace({ name, description }))
+      if (createWorkspace.fulfilled.match(result)) close()
+      return
     }
+    if (!dirty) return close()
+    const result = await dispatch(updateWorkspace({ id: workspace.id, payload: { name, description, status } }))
+    if (updateWorkspace.fulfilled.match(result)) close()
   }
 
   return (
-    <Dialog open onOpenChange={(o) => !o && close()}>
+    <Dialog open onOpenChange={(o) => !o && !loading && close()}>
       <DialogContent className="sm:max-w-md">
         <form onSubmit={submit} className="grid gap-4">
           <DialogHeader>
-            <DialogTitle>Workspace baru</DialogTitle>
-            <DialogDescription>Anda otomatis menjadi Pengelola workspace ini.</DialogDescription>
+            <DialogTitle>{editing ? 'Edit workspace' : 'Workspace baru'}</DialogTitle>
+            <DialogDescription>
+              {editing ? 'Perbarui nama, deskripsi, dan status workspace.' : 'Anda otomatis menjadi Pengelola workspace ini.'}
+            </DialogDescription>
           </DialogHeader>
           <div className="grid gap-1.5">
             <Label htmlFor="ws-name">Nama workspace</Label>
@@ -59,54 +94,80 @@ export function NewWorkspaceDialog() {
               aria-invalid={!!error}
               onChange={(e) => {
                 setName(e.target.value)
-                setError(null)
+                clearError()
               }}
-              placeholder="mis. Operasional"
+              placeholder="mis. Engineering Team"
             />
-            {error && <p className="text-xs text-destructive">{error}</p>}
           </div>
           <div className="grid gap-1.5">
             <Label htmlFor="ws-desc">Deskripsi</Label>
             <Textarea
               id="ws-desc"
               value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              onChange={(e) => {
+                setDescription(e.target.value)
+                clearError()
+              }}
               placeholder="Untuk apa workspace ini digunakan?"
               rows={2}
             />
           </div>
-          <div className="grid gap-1.5">
-            <Label>Warna</Label>
-            <div className="flex gap-2">
-              {(Object.keys(WORKSPACE_COLORS) as WorkspaceColor[]).map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className={cn(
-                    'flex size-8 items-center justify-center rounded-full text-white ring-offset-2 ring-offset-background transition',
-                    WORKSPACE_COLORS[c].solid,
-                    color === c && 'ring-2 ring-foreground/40',
-                  )}
-                  aria-label={WORKSPACE_COLORS[c].label}
-                  aria-pressed={color === c}
-                >
-                  {color === c && <Check className="size-4" />}
-                </button>
-              ))}
+          {editing && (
+            <div className="grid gap-1.5">
+              <Label>Status</Label>
+              <Select
+                value={status}
+                onValueChange={(v) => {
+                  setStatus(v as WorkspaceStatus)
+                  clearError()
+                }}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Pilih status" />
+                </SelectTrigger>
+                <SelectContent position="popper">
+                  {WORKSPACE_STATUS_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
+          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={close}>
+            <Button type="button" variant="outline" onClick={close} disabled={loading}>
               Batal
             </Button>
-            <Button type="submit" disabled={!name.trim() || saving}>
-              {saving && <LoaderCircle className="animate-spin" />}
-              Buat workspace
+            <Button type="submit" disabled={!name.trim() || loading || !dirty}>
+              {loading && <LoaderCircle className="animate-spin" />}
+              {editing ? 'Simpan perubahan' : 'Buat workspace'}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
   )
+}
+
+/** Dialog "Workspace baru" → POST /workspaces. */
+export function NewWorkspaceDialog() {
+  return <WorkspaceFormDialog />
+}
+
+/** Dialog "Edit workspace" → PUT /workspaces/{id}. */
+export function EditWorkspaceDialog({ id }: { id: string }) {
+  const dispatch = useAppDispatch()
+  const workspace = useAppSelector((s) => {
+    const detail = s.workspaceDetail.workspace
+    if (detail?.id === id) return detail
+    return s.workspaceList.workspaces.find((w) => w.id === id) ?? null
+  })
+  // workspace sudah tidak ada di daftar (mis. terhapus) → tutup
+  useEffect(() => {
+    if (!workspace) dispatch(uiActions.closeDialog())
+  }, [workspace, dispatch])
+  if (!workspace) return null
+  return <WorkspaceFormDialog workspace={workspace} />
 }

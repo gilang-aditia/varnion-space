@@ -22,6 +22,7 @@ import { useCurrentUser, usePermissions } from "@/hooks/use-drive";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/common/empty-state";
+import { DeletedStamp } from "@/components/common/deleted-stamp";
 import { UserAvatar } from "@/components/common/user-avatar";
 import { StatusBadge } from "./components/UsersTab";
 import { EditUserDialog } from "./components/EditUserDialog";
@@ -133,27 +134,6 @@ function DetailSkeleton() {
       </div>
       <div className="h-40 rounded-xl border bg-muted/30" />
       <div className="h-56 rounded-xl border bg-muted/30" />
-    </div>
-  );
-}
-
-/** Cap "DIHAPUS" ala stempel tinta di pojok kartu profil. */
-function DeletedStamp({ deletedAt }: { deletedAt?: string | null }) {
-  return (
-    <div
-      aria-hidden
-      className="pointer-events-none absolute top-4 right-4 z-10 -rotate-12 select-none sm:top-5 sm:right-8"
-    >
-      <div className="rounded-lg border-[3px] border-destructive/70 p-0.5 text-destructive/80 mix-blend-multiply dark:mix-blend-screen">
-        <div className="rounded-md border border-destructive/60 px-4 py-1.5 text-center">
-          <p className="text-2xl leading-none font-black tracking-[0.25em] uppercase sm:text-3xl">
-            Dihapus
-          </p>
-          <p className="mt-1 text-[10px] font-semibold tracking-[0.2em] uppercase">
-            Sementara{deletedAt ? ` · ${formatDateTime(deletedAt)}` : ""}
-          </p>
-        </div>
-      </div>
     </div>
   );
 }

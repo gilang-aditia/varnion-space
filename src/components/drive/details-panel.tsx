@@ -1,5 +1,5 @@
-import { useMemo, type ReactNode } from "react";
-import { Activity, Info, Users, X } from "lucide-react";
+import { useEffect, useMemo, type ReactNode } from "react";
+import { Activity, Info, Loader2, RotateCw, Users, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { FILE_TYPE_META } from "@/lib/file-types";
 import {
@@ -9,7 +9,11 @@ import {
   formatDayGroup,
   formatWhen,
 } from "@/lib/format";
-import { describePermissions, getWorkspaceRole, nodePermissions } from "@/lib/rbac";
+import {
+  describePermissions,
+  getWorkspaceRole,
+  nodePermissions,
+} from "@/lib/rbac";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import {
   getPath,
@@ -20,11 +24,32 @@ import {
 import { uiActions } from "@/store/slices/uiSlice";
 import { navigate } from "@/store/thunks";
 import { useCurrentUser, useNow } from "@/hooks/use-drive";
+import { ACTIVITY_META } from "@/lib/activity";
+import { avatarColorOf } from "@/lib/user-mapper";
+import { WorkspaceStatusBadge } from "@/features/workspace/components/WorkspaceStatusBadge";
+import { fetchWorkspaceDetail } from "@/features/workspace/redux/workspaceDetailAction";
+import { fetchWorkspaceLogs } from "@/features/workspace/redux/workspaceLogsAction";
+import type { WorkspaceLog } from "@/features/workspace/redux/workspaceLogsType";
+import type {
+  WorkspaceCreator,
+  WorkspaceData,
+} from "@/features/workspace/redux/workspaceType";
+import type { WorkspaceDetail } from "@/features/workspace/redux/workspaceDetailType";
+import {
+  workspaceColorOf,
+  workspaceLogAction,
+} from "@/features/workspace/utils";
 import type { ActivityLog, DriveNode, User } from "@/types/drive";
 import { NodeIcon } from "@/components/common/node-icon";
 import { UserAvatar } from "@/components/common/user-avatar";
-import { AccessBadge, WorkspaceRoleBadge } from "@/components/common/role-badge";
-import { ActivityItem } from "@/components/activity/activity-item";
+import {
+  AccessBadge,
+  WorkspaceRoleBadge,
+} from "@/components/common/role-badge";
+import {
+  ActivityItem,
+  ActivityItemView,
+} from "@/components/activity/activity-item";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { FileThumb } from "./node-views";
@@ -44,7 +69,7 @@ function Who({
   now,
   me,
 }: {
-  user?: User;
+  user?: (Pick<User, "name" | "avatarColor"> & { id?: string }) | null;
   at?: string;
   now: number;
   me: User | null;
@@ -56,7 +81,7 @@ function Who({
       <div className="min-w-0">
         <p className="truncate font-medium">
           {user
-            ? user.id === me?.id
+            ? user.id && user.id === me?.id
               ? `${user.name} (Anda)`
               : user.name
             : "—"}
@@ -69,6 +94,50 @@ function Who({
   );
 }
 
+/** Kelompokkan item per hari (label "Hari ini", "Kemarin", …) — tampilan log aktivitas. */
+function GroupedByDay<T>({
+  items,
+  getAt,
+  getKey,
+  render,
+}: {
+  items: T[];
+  getAt: (item: T) => string;
+  getKey: (item: T, index: number) => string;
+  render: (item: T) => ReactNode;
+}) {
+  const groups = useMemo(() => {
+    const out: { key: string; label: string; items: T[] }[] = [];
+    for (const item of items) {
+      const at = getAt(item);
+      const k = dayKey(at);
+      const last = out[out.length - 1];
+      if (last?.key === k) last.items.push(item);
+      else out.push({ key: k, label: formatDayGroup(at), items: [item] });
+    }
+    return out;
+  }, [items, getAt]);
+  return (
+    <div className="space-y-3">
+      {groups.map((g) => (
+        <div key={g.key}>
+          <p className="sticky top-0 z-1 bg-inherit py-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+            {g.label}
+          </p>
+          <div className="divide-y divide-border/60">
+            {g.items.map((item, i) => (
+              <div key={getKey(item, i)}>{render(item)}</div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const logAt = (l: ActivityLog) => l.at;
+const logKey = (l: ActivityLog) => l.id;
+
 export function GroupedLogs({
   logs,
   now,
@@ -80,37 +149,20 @@ export function GroupedLogs({
   compact?: boolean;
   showWorkspace?: boolean;
 }) {
-  const groups = useMemo(() => {
-    const out: { key: string; label: string; items: ActivityLog[] }[] = [];
-    for (const l of logs) {
-      const k = dayKey(l.at);
-      const last = out[out.length - 1];
-      if (last?.key === k) last.items.push(l);
-      else out.push({ key: k, label: formatDayGroup(l.at), items: [l] });
-    }
-    return out;
-  }, [logs]);
   return (
-    <div className="space-y-3">
-      {groups.map((g) => (
-        <div key={g.key}>
-          <p className="sticky top-0 z-1 bg-inherit py-1 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
-            {g.label}
-          </p>
-          <div className="divide-y divide-border/60">
-            {g.items.map((l) => (
-              <ActivityItem
-                key={l.id}
-                log={l}
-                compact={compact}
-                showWorkspace={showWorkspace}
-                now={now}
-              />
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
+    <GroupedByDay
+      items={logs}
+      getAt={logAt}
+      getKey={logKey}
+      render={(l) => (
+        <ActivityItem
+          log={l}
+          compact={compact}
+          showWorkspace={showWorkspace}
+          now={now}
+        />
+      )}
+    />
   );
 }
 
@@ -170,7 +222,9 @@ function NodeDetails({ node, now }: { node: DriveNode; now: number }) {
                   variant="ghost"
                   size="xs"
                   onClick={() =>
-                    dispatch(uiActions.openDialog({ type: "share", id: node.id }))
+                    dispatch(
+                      uiActions.openDialog({ type: "share", id: node.id }),
+                    )
                   }
                 >
                   Bagikan
@@ -180,10 +234,14 @@ function NodeDetails({ node, now }: { node: DriveNode; now: number }) {
                 variant="ghost"
                 size="xs"
                 onClick={() =>
-                  dispatch(uiActions.openDialog({ type: "access", id: node.id }))
+                  dispatch(
+                    uiActions.openDialog({ type: "access", id: node.id }),
+                  )
                 }
               >
-                {nodePermissions(node).canShare ? "Kelola akses" : "Lihat akses"}
+                {nodePermissions(node).canShare
+                  ? "Kelola akses"
+                  : "Lihat akses"}
               </Button>
             </div>
           </div>
@@ -357,6 +415,179 @@ function NodeActivity({ node, now }: { node: DriveNode | null; now: number }) {
   );
 }
 
+/** Orang dari respons API (`{ name, email }`) → bentuk yang dipakai avatar. */
+const toPerson = (p?: WorkspaceCreator | null) =>
+  p?.name
+    ? { name: p.name, avatarColor: avatarColorOf(p.email || p.name) }
+    : null;
+
+/** Tab "Detail" untuk workspace dari API (GET /workspaces/{id}). */
+function WorkspaceDetails({
+  workspace: ws,
+  now,
+}: {
+  workspace: WorkspaceData | WorkspaceDetail;
+  now: number;
+}) {
+  const me = useCurrentUser();
+  const actor =
+    "last_activity_actor" in ws
+      ? (ws.last_activity_actor ?? ws.last_activity_by)
+      : null;
+
+  return (
+    <div className="space-y-4">
+      {ws.description && (
+        <p className="rounded-lg bg-muted/50 p-3 text-xs leading-relaxed text-muted-foreground">
+          {ws.description}
+        </p>
+      )}
+
+      <div className="flex items-center justify-between rounded-lg border px-3 py-2">
+        <span className="text-xs text-muted-foreground">Status</span>
+        <WorkspaceStatusBadge status={ws.status} deleted={!!ws.deleted_at} />
+      </div>
+
+      <section>
+        <h4 className="mb-1 text-xs font-semibold">Informasi</h4>
+        <dl className="divide-y divide-border/60">
+          <Row label="Jenis">Workspace</Row>
+          <Row label="Ukuran">
+            {ws.total_size_formatted || formatBytes(ws.total_size)}
+          </Row>
+          <Row label="Isi">
+            {(ws.total_folders ?? 0).toLocaleString("id-ID")} folder ·{" "}
+            {(ws.total_files ?? 0).toLocaleString("id-ID")} file
+          </Row>
+        </dl>
+      </section>
+
+      <section>
+        <h4 className="mb-1 text-xs font-semibold">Jejak audit</h4>
+        <dl className="divide-y divide-border/60">
+          <Row label="Dibuat oleh">
+            <Who
+              user={toPerson(ws.created_by)}
+              at={ws.created_at}
+              now={now}
+              me={me}
+            />
+          </Row>
+          <Row label="Terakhir diubah">
+            <span
+              className="text-muted-foreground"
+              title={formatDateTime(ws.updated_at)}
+            >
+              {formatWhen(ws.updated_at, now)}
+            </span>
+          </Row>
+          <Row label="Aktivitas terakhir">
+            {ws.last_activity_at ? (
+              <div className="space-y-1">
+                <Who
+                  user={toPerson(actor)}
+                  at={ws.last_activity_at}
+                  now={now}
+                  me={me}
+                />
+                {ws.last_activity && (
+                  <p className="text-muted-foreground">{ws.last_activity}</p>
+                )}
+              </div>
+            ) : (
+              <span className="text-muted-foreground">—</span>
+            )}
+          </Row>
+        </dl>
+      </section>
+    </div>
+  );
+}
+
+const wsLogAt = (l: WorkspaceLog) => l._time;
+const wsLogKey = (l: WorkspaceLog, i: number) =>
+  `${l._stream_id}-${l._time}-${i}`;
+
+/** Tab "Aktivitas" untuk workspace dari API (GET /workspaces/{id}/logs). */
+function WorkspaceActivity({
+  workspaceId,
+  now,
+}: {
+  workspaceId: string;
+  now: number;
+}) {
+  const dispatch = useAppDispatch();
+  const me = useCurrentUser();
+  const {
+    logs,
+    loading,
+    error,
+    workspaceId: logsFor,
+  } = useAppSelector((s) => s.workspaceLogs);
+  const items = logsFor === workspaceId ? logs : [];
+  const reload = () =>
+    void dispatch(fetchWorkspaceLogs({ id: workspaceId, limit: 50 }));
+
+  if (loading && !items.length)
+    return (
+      <div className="flex justify-center py-8">
+        <Loader2
+          className="size-5 animate-spin text-muted-foreground"
+          aria-label="Memuat"
+        />
+      </div>
+    );
+  if (error && !items.length)
+    return (
+      <div className="py-8 text-center text-xs">
+        <p className="text-destructive">{error}</p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="mt-3 gap-1.5"
+          onClick={reload}
+        >
+          <RotateCw /> Coba lagi
+        </Button>
+      </div>
+    );
+  if (!items.length)
+    return (
+      <p className="py-8 text-center text-xs text-muted-foreground">
+        Belum ada aktivitas.
+      </p>
+    );
+  return (
+    <GroupedByDay
+      items={items}
+      getAt={wsLogAt}
+      getKey={wsLogKey}
+      render={(l) => {
+        const meta = ACTIVITY_META[workspaceLogAction(l)];
+        const isMe = !!me?.email && l.user_email === me.email;
+        return (
+          <ActivityItemView
+            compact
+            now={now}
+            at={l._time}
+            icon={meta.icon}
+            tone={meta.tone}
+            actor={toPerson({ name: l.user_name, email: l.user_email })}
+            sentence={
+              <>
+                <span className="font-medium text-foreground">
+                  {isMe ? "Anda" : l.user_name || l.user_email || "Sistem"}
+                </span>{" "}
+                — {l._msg}
+              </>
+            }
+          />
+        );
+      }}
+    />
+  );
+}
+
 export function DetailsPanelContent({ onClose }: { onClose: () => void }) {
   const now = useNow();
   const route = useAppSelector((s) => s.ui.route);
@@ -364,6 +595,75 @@ export function DetailsPanelContent({ onClose }: { onClose: () => void }) {
   const nodes = useAppSelector((s) => s.drive.nodes);
   const id = selectedId ?? (route.page === "folder" ? route.id : null);
   const node = id ? (nodes[id] ?? null) : null;
+  // Bukan node drive → workspace dari API (daftar beranda / detail)
+  const apiWorkspace = useAppSelector((s) => {
+    if (!id || node) return null;
+    const detail = s.workspaceDetail.workspace;
+    if (detail?.id === id) return detail;
+    return s.workspaceList.workspaces.find((w) => w.id === id) ?? null;
+  });
+  const dispatch = useAppDispatch();
+  const apiWorkspaceId = apiWorkspace?.id ?? null;
+
+  useEffect(() => {
+    if (!apiWorkspaceId) return;
+    void dispatch(fetchWorkspaceDetail({ id: apiWorkspaceId }));
+    void dispatch(fetchWorkspaceLogs({ id: apiWorkspaceId, limit: 50 }));
+  }, [dispatch, apiWorkspaceId]);
+
+  if (apiWorkspace) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex items-center gap-3 border-b px-4 py-3">
+          <NodeIcon
+            node={{
+              kind: "workspace",
+              name: apiWorkspace.name,
+              color: workspaceColorOf(apiWorkspace.id),
+            }}
+            size="sm"
+          />
+          <h3 className="min-w-0 flex-1 truncate text-sm font-semibold">
+            {apiWorkspace.name}
+          </h3>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={onClose}
+            aria-label="Tutup panel detail"
+          >
+            <X />
+          </Button>
+        </div>
+        <Tabs
+          key={apiWorkspace.id}
+          defaultValue="details"
+          className="min-h-0 flex-1 gap-0"
+        >
+          <TabsList className="mx-4 mt-3 w-[calc(100%-2rem)]">
+            <TabsTrigger value="details">
+              <Info /> Detail
+            </TabsTrigger>
+            <TabsTrigger value="activity">
+              <Activity /> Aktivitas
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent
+            value="details"
+            className="min-h-0 overflow-y-auto px-4 py-4"
+          >
+            <WorkspaceDetails workspace={apiWorkspace} now={now} />
+          </TabsContent>
+          <TabsContent
+            value="activity"
+            className="min-h-0 overflow-y-auto bg-background px-4 py-3"
+          >
+            <WorkspaceActivity workspaceId={apiWorkspace.id} now={now} />
+          </TabsContent>
+        </Tabs>
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full flex-col">

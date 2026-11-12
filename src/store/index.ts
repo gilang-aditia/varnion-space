@@ -13,6 +13,13 @@ import updateUserReducer from "@/features/userManagement/redux/updateUserSlice";
 import deleteUserReducer from "@/features/userManagement/redux/deleteUserSlice";
 import restoreUserReducer from "@/features/userManagement/redux/restoreUserSlice";
 import roleReducer from "@/features/userManagement/redux/roleSlice";
+import workspaceListReducer from "@/features/workspace/redux/workspaceSlice";
+import createWorkspaceReducer from "@/features/workspace/redux/createWorkspaceSlice";
+import workspaceDetailReducer from "@/features/workspace/redux/workspaceDetailSlice";
+import workspaceLogsReducer from "@/features/workspace/redux/workspaceLogsSlice";
+import updateWorkspaceReducer from "@/features/workspace/redux/updateWorkspaceSlice";
+import deleteWorkspaceReducer from "@/features/workspace/redux/deleteWorkspaceSlice";
+import restoreWorkspaceReducer from "@/features/workspace/redux/restoreWorkspaceSlice";
 import permissionReducer from "@/features/userManagement/redux/permissionSlice";
 import usersCacheReducer from "./slices/usersSlice";
 import driveReducer from "./slices/driveSlice";
@@ -53,6 +60,13 @@ const store = configureStore({
     restoreUser: restoreUserReducer,
     roles: roleReducer,
     permissions: permissionReducer,
+    workspaceList: workspaceListReducer,
+    createWorkspace: createWorkspaceReducer,
+    workspaceDetail: workspaceDetailReducer,
+    workspaceLogs: workspaceLogsReducer,
+    updateWorkspace: updateWorkspaceReducer,
+    deleteWorkspace: deleteWorkspaceReducer,
+    restoreWorkspace: restoreWorkspaceReducer,
 
     // Belum diintegrasikan ke API (src/store/slices)
     users: usersCacheReducer,

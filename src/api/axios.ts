@@ -43,6 +43,11 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
   }
   const token = getAuthToken();
   if (token) config.headers.Authorization = `Bearer ${token}`;
+  // GET selalu minta data terbaru (jangan pakai cache HTTP browser) —
+  // mis. daftar workspace yang dimuat ulang setelah create/edit.
+  if ((config.method ?? "get").toLowerCase() === "get") {
+    config.headers["Cache-Control"] = "no-cache";
+  }
   return config;
 });
 

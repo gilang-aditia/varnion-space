@@ -7,7 +7,7 @@ import { ShareDialog } from './share-dialog'
 import { ConfirmDialog } from './confirm-dialog'
 import { PreviewDialog } from './preview-dialog'
 import { MembersDialog } from './members-dialog'
-import { NewWorkspaceDialog } from './create-dialogs'
+import { EditWorkspaceDialog, NewWorkspaceDialog } from './create-dialogs'
 import { CreateUserDialog } from '@/features/userManagement/components/CreateUserDialog'
 
 /** Merender dialog aktif berdasarkan `ui.dialog` di store. */
@@ -51,6 +51,8 @@ export function DialogHost() {
       return <MembersDialog key={`mb-${dialog.workspaceId}`} workspaceId={dialog.workspaceId} />
     case 'newWorkspace':
       return <NewWorkspaceDialog />
+    case 'editWorkspace':
+      return <EditWorkspaceDialog key={`ew-${dialog.id}`} id={dialog.id} />
     case 'newUser':
       return <CreateUserDialog />
   }
