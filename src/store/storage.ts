@@ -4,7 +4,7 @@
  * itu milik server.
  */
 
-import type { AuthSession } from './auth/authTypes'
+import type { AuthSession } from '@/features/login/redux/loginType'
 
 const SESSION_KEY = 'varnion-drive:session'
 const PREFS_KEY = 'varnion-drive:prefs'

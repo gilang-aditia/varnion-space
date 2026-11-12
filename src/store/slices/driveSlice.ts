@@ -1,6 +1,6 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
 import type { DriveNode } from '@/types/drive'
-import { loggedOut } from '../auth/authActions'
+import { loggedOut } from '@/features/login/redux/loginAction'
 
 /** Cache node (workspace, folder, file) dari API. */
 export interface DriveState {

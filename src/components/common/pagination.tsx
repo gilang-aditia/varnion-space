@@ -1,5 +1,5 @@
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import type { PageMeta } from '@/types/rbac'
+import type { PaginationMeta } from '@/types/api'
 import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 
@@ -25,12 +25,12 @@ export function Pagination({
   onPageChange,
   onPerPageChange,
 }: {
-  meta: PageMeta
+  meta: PaginationMeta
   disabled?: boolean
   onPageChange: (page: number) => void
   onPerPageChange: (perPage: number) => void
 }) {
-  const { total, page, perPage, totalPages, hasNext, hasPrev } = meta
+  const { total, page, per_page: perPage, total_pages: totalPages, has_next: hasNext, has_prev: hasPrev } = meta
   const from = total === 0 ? 0 : (page - 1) * perPage + 1
   const to = Math.min(total, page * perPage)
 

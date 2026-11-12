@@ -1,15 +1,9 @@
 /**
- * Semua aksi aplikasi. Komponen hanya men-dispatch thunk dari sini;
- * thunk memanggil `api` (REST API) lalu memperbarui cache Redux.
+ * Aksi modul yang BELUM dipindah ke `src/features/<modul>/redux` (drive, workspace, navigasi).
+ * Modul yang sudah terintegrasi (login, me, logout, refreshToken, userManagement)
+ * di-import langsung dari folder `redux` modulnya.
  */
 export { syncActivity } from './activity'
-export { login, restoreSession } from '../auth/authActions'
-export { logout } from '../logout/logoutActions'
-export { refreshAccessToken } from '../refresh/refreshActions'
-export { fetchPermissionCatalog, fetchPermissions, fetchRoleCatalog, fetchRoles } from '../rbac/rbacActions'
-export { fetchUserList } from '../userList/userListActions'
-export { fetchMe } from '../me/meActions'
-export type { LoginArgs } from '../auth/authTypes'
 export { navigate, openNode, recordOpen, syncRouteFromUrl } from './navigation'
 export {
   createFolder,

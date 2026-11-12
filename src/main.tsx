@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Provider } from 'react-redux'
 import { store } from './store'
-import { restoreSession } from './store/thunks'
+import { restoreSession } from './features/login/redux/loginAction'
 import './index.css'
 import App from './App.tsx'
 

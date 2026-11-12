@@ -1,6 +1,6 @@
 import { createSlice, nanoid, type PayloadAction } from '@reduxjs/toolkit'
 import type { SortKey } from '@/lib/node-utils'
-import { loggedOut } from '../auth/authActions'
+import { loggedOut } from '@/features/login/redux/loginAction'
 
 /* --------------------------------- Route --------------------------------- */
 
@@ -12,6 +12,7 @@ export type Route =
   | { page: 'activity' }
   | { page: 'trash' }
   | { page: 'users' }
+  | { page: 'userDetail'; id: string }
 
 export function routeToHash(route: Route): string {
   switch (route.page) {
@@ -19,6 +20,8 @@ export function routeToHash(route: Route): string {
       return '#/'
     case 'folder':
       return `#/f/${encodeURIComponent(route.id)}`
+    case 'userDetail':
+      return `#/users/${encodeURIComponent(route.id)}`
     default:
       return `#/${route.page}`
   }
@@ -28,6 +31,7 @@ export function hashToRoute(hash: string): Route {
   const path = hash.replace(/^#\/?/, '')
   const [head, arg] = path.split('/')
   if (head === 'f' && arg) return { page: 'folder', id: decodeURIComponent(arg) }
+  if (head === 'users' && arg) return { page: 'userDetail', id: decodeURIComponent(arg) }
   if (head === 'recent' || head === 'shared' || head === 'activity' || head === 'trash' || head === 'users')
     return { page: head }
   return { page: 'home' }

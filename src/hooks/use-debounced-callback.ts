@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 
 /**
  * Kembalikan versi ter-debounce dari `fn`: dipanggil sekali setelah `delay` ms
  * tanpa panggilan baru (mis. setelah user berhenti mengetik).
- * Timer dibatalkan saat komponen unmount.
+ * Timer dibatalkan saat komponen unmount, atau manual lewat `.cancel()`.
  */
 export function useDebouncedCallback<Args extends unknown[]>(fn: (...args: Args) => void, delay = 400) {
   const fnRef = useRef(fn)
@@ -16,11 +16,13 @@ export function useDebouncedCallback<Args extends unknown[]>(fn: (...args: Args)
 
   useEffect(() => () => clearTimeout(timer.current), [])
 
-  return useCallback(
-    (...args: Args) => {
+  return useMemo(() => {
+    const debounced = (...args: Args) => {
       clearTimeout(timer.current)
       timer.current = setTimeout(() => fnRef.current(...args), delay)
-    },
-    [delay],
-  )
+    }
+    /** Batalkan panggilan yang masih menunggu. */
+    debounced.cancel = () => clearTimeout(timer.current)
+    return debounced
+  }, [delay])
 }

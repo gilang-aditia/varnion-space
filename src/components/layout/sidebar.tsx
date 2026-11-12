@@ -55,7 +55,8 @@ function NavItem({
 }) {
   const dispatch = useAppDispatch();
   const current = useAppSelector(selectRoute);
-  const active = current.page === route.page;
+  // detail pengguna masih bagian dari menu "Pengguna & Peran"
+  const active = current.page === route.page || (route.page === "users" && current.page === "userDetail");
   return (
     <button
       type="button"

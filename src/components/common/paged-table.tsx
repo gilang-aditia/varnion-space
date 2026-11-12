@@ -1,8 +1,7 @@
 import { useState, type ReactNode } from "react";
-import { Loader2, RotateCw, Search } from "lucide-react";
+import { Loader2, RotateCw, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { PagedListState } from "@/store/paged";
-import type { PageQuery } from "@/types/rbac";
+import type { PaginationMeta } from "@/types/api";
 import { useDebouncedCallback } from "@/hooks/use-debounced-callback";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -41,75 +40,106 @@ function SearchBox({
 }
 
 /**
- * Kerangka list berpaginasi: pencarian (debounce), filter tambahan, tabel,
- * status kosong/error, dan pagination berbasis `meta` backend.
- * `load` dipanggil dengan bagian query yang berubah; sisanya memakai query terakhir di store.
+ * Tabel list berpaginasi (presentational): kotak pencarian ber-debounce, filter
+ * tambahan, status kosong/error, dan pagination dari `meta` backend.
+ * State (page, limit, search, filter) ada di slice modul masing-masing.
  */
-export function PagedTable<T, Q extends PageQuery = PageQuery>({
-  list,
-  load,
+export function PagedTable<T>({
+  items,
+  meta,
+  loading,
+  error,
+  search,
+  onSearch,
+  onPageChange,
+  onLimitChange,
+  onRetry,
   searchPlaceholder,
   emptyText,
+  filtered = false,
+  filters,
+  onResetFilters,
   head,
   renderRow,
   colSpan,
-  filters,
-  minWidthClass = "min-w-180",
 }: {
-  list: PagedListState<T, Q>;
-  load: (q?: Partial<Q>) => void;
+  items: T[];
+  meta: PaginationMeta | null;
+  loading: boolean;
+  error: string | null;
+  /** Nilai search di store (dipakai sebagai nilai awal input). */
+  search: string;
+  /** Dipanggil setelah user berhenti mengetik (`SEARCH_DEBOUNCE_MS`). */
+  onSearch: (value: string) => void;
+  onPageChange: (page: number) => void;
+  onLimitChange: (limit: number) => void;
+  onRetry: () => void;
   searchPlaceholder: string;
   emptyText: string;
+  /** true → ada filter selain search yang aktif (untuk teks "tidak ada hasil"). */
+  filtered?: boolean;
+  /** Kontrol filter di samping kotak pencarian (mis. Select status/peran). */
+  filters?: ReactNode;
+  /**
+   * Reset search + filter di store. Bila diisi, tombol "Reset filter" tampil
+   * selama ada pencarian atau filter yang aktif.
+   */
+  onResetFilters?: () => void;
   head: ReactNode;
   renderRow: (item: T) => ReactNode;
   colSpan: number;
-  /** Kontrol filter di samping kotak pencarian (mis. Select status/peran). */
-  filters?: ReactNode;
-  minWidthClass?: string;
 }) {
-  const [search, setSearch] = useState(list.query.search);
-  const loading = list.status === "loading";
-  const debouncedSearch = useDebouncedCallback(
-    (value: string) => load({ search: value.trim(), page: 1 } as Partial<Q>),
-    SEARCH_DEBOUNCE_MS,
-  );
-  const filtered = Object.values(list.query).some((v) => typeof v === "string" && v);
+  const [input, setInput] = useState(search);
+  const debouncedSearch = useDebouncedCallback((value: string) => onSearch(value.trim()), SEARCH_DEBOUNCE_MS);
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <SearchBox
-          value={search}
+          value={input}
           onChange={(v) => {
-            setSearch(v);
+            setInput(v);
             debouncedSearch(v);
           }}
           placeholder={searchPlaceholder}
           loading={loading}
         />
         {filters}
+        {onResetFilters && (input !== "" || search !== "" || filtered) && (
+          <Button
+            variant="ghost"
+            className="gap-1.5 text-muted-foreground"
+            onClick={() => {
+              setInput("");
+              debouncedSearch.cancel(); // ketikan yang belum terkirim ikut dibatalkan
+              onResetFilters();
+            }}
+          >
+            <X /> Reset filter
+          </Button>
+        )}
       </div>
       <div className="overflow-hidden rounded-xl border bg-card">
         <div className="overflow-x-auto">
-          <table className={cn("w-full text-sm", minWidthClass)}>
+          <table className="w-full min-w-180 text-sm">
             <thead className="border-b bg-muted/40 text-left text-xs text-muted-foreground">{head}</thead>
-            <tbody className={cn("transition-opacity", loading && list.items.length > 0 && "opacity-60")}>
-              {list.status === "failed" ? (
+            <tbody className={cn("transition-opacity", loading && items.length > 0 && "opacity-60")}>
+              {error && !loading ? (
                 <tr>
                   <td colSpan={colSpan} className="px-4 py-10 text-center text-sm">
-                    <p className="text-destructive">{list.error?.message ?? "Gagal memuat data."}</p>
-                    <Button variant="outline" size="sm" className="mt-3 gap-1.5" onClick={() => load()}>
+                    <p className="text-destructive">{error}</p>
+                    <Button variant="outline" size="sm" className="mt-3 gap-1.5" onClick={onRetry}>
                       <RotateCw /> Coba lagi
                     </Button>
                   </td>
                 </tr>
-              ) : list.items.length === 0 ? (
+              ) : items.length === 0 ? (
                 <tr>
                   <td colSpan={colSpan} className="px-4 py-10 text-center text-sm text-muted-foreground">
-                    {loading || list.status === "idle" ? (
+                    {loading || !meta ? (
                       <Loader2 className="mx-auto size-5 animate-spin" aria-label="Memuat" />
-                    ) : list.query.search ? (
-                      <>Tidak ada hasil untuk “{list.query.search}”.</>
+                    ) : search ? (
+                      <>Tidak ada hasil untuk “{search}”.</>
                     ) : filtered ? (
                       "Tidak ada data yang cocok dengan filter."
                     ) : (
@@ -118,18 +148,13 @@ export function PagedTable<T, Q extends PageQuery = PageQuery>({
                   </td>
                 </tr>
               ) : (
-                list.items.map(renderRow)
+                items.map(renderRow)
               )}
             </tbody>
           </table>
         </div>
-        {list.meta && (
-          <Pagination
-            meta={list.meta}
-            disabled={loading}
-            onPageChange={(page) => load({ page } as Partial<Q>)}
-            onPerPageChange={(perPage) => load({ perPage, page: 1 } as Partial<Q>)}
-          />
+        {meta && (
+          <Pagination meta={meta} disabled={loading} onPageChange={onPageChange} onPerPageChange={onLimitChange} />
         )}
       </div>
     </div>

@@ -1,6 +1,6 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
 import type { User } from '@/types/drive'
-import { loggedOut } from '../auth/authActions'
+import { loggedOut } from '@/features/login/redux/loginAction'
 
 /** Cache profil pengguna dari API. */
 export interface UsersState {

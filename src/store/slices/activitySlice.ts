@@ -1,6 +1,6 @@
 import { createSlice, type PayloadAction } from '@reduxjs/toolkit'
 import type { ActivityLog } from '@/types/drive'
-import { loggedOut } from '../auth/authActions'
+import { loggedOut } from '@/features/login/redux/loginAction'
 
 /** Cache log aktivitas dari API, terurut dari yang terbaru. */
 export interface ActivityState {

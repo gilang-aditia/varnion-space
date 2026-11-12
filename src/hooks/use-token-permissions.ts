@@ -9,7 +9,7 @@ import { useAppSelector } from '@/store/hooks'
  */
 export function useTokenClaims(): Pick<AccessTokenClaims, 'roles' | 'permissions'> {
   const userId = useAppSelector((s) => s.auth.session?.userId)
-  const refreshedAt = useAppSelector((s) => s.refresh.lastRefreshedAt)
+  const refreshedAt = useAppSelector((s) => s.refreshToken.lastRefreshedAt)
   return useMemo(() => {
     void userId
     void refreshedAt

@@ -13,7 +13,8 @@ import { RecentView, SearchResults, SharedView } from '@/components/drive/search
 import { DetailsPanelContent } from '@/components/drive/details-panel'
 import { ActivityPage } from '@/components/activity/activity-page'
 import { TrashPage } from '@/components/trash/trash-page'
-import { UsersPage } from '@/components/admin/users-page'
+import { UsersPage } from '@/features/userManagement/UsersPage'
+import { UserDetailPage } from '@/features/userManagement/UserDetailPage'
 import { DialogHost } from '@/components/dialogs/dialog-host'
 
 const XL_QUERY = '(min-width: 1280px)'
@@ -25,6 +26,7 @@ const PAGE_TITLE: Record<string, string> = {
   activity: 'Log Aktivitas',
   trash: 'Sampah',
   users: 'Pengguna & Peran',
+  userDetail: 'Detail Pengguna',
 }
 
 export function AppShell() {
@@ -34,6 +36,9 @@ export function AppShell() {
   const detailsOpen = useAppSelector((s) => s.ui.detailsOpen)
   const mobileNavOpen = useAppSelector((s) => s.ui.mobileNavOpen)
   const folderName = useAppSelector((s) => (route.page === 'folder' ? s.drive.nodes[route.id]?.name : undefined))
+  const userName = useAppSelector((s) =>
+    route.page === 'userDetail' && s.userDetail.user?.id === route.id ? s.userDetail.user.display_name : undefined,
+  )
   const isXl = useMediaQuery(XL_QUERY)
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -42,16 +47,17 @@ export function AppShell() {
   const showDetails = detailsOpen && detailsAvailable
 
   // Reset scroll & judul tab saat berpindah halaman
-  const routeKey = route.page === 'folder' ? `f:${route.id}` : route.page
+  const routeKey =
+    route.page === 'folder' ? `f:${route.id}` : route.page === 'userDetail' ? `u:${route.id}` : route.page
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 })
     // Di layar kecil panel detail berupa sheet penuh → jangan ikut terbuka saat pindah halaman
     if (!window.matchMedia(XL_QUERY).matches) dispatch(uiActions.setDetailsOpen(false))
   }, [routeKey, dispatch])
   useEffect(() => {
-    const title = searching ? `Cari “${search.trim()}”` : (folderName ?? PAGE_TITLE[route.page] ?? '')
+    const title = searching ? `Cari “${search.trim()}”` : (folderName ?? userName ?? PAGE_TITLE[route.page] ?? '')
     document.title = `${title} — Varnion Space`
-  }, [route.page, folderName, searching, search])
+  }, [route.page, folderName, userName, searching, search])
 
   let content
   if (searching) content = <SearchResults query={search} />
@@ -61,6 +67,7 @@ export function AppShell() {
   else if (route.page === 'shared') content = <SharedView />
   else if (route.page === 'activity') content = <ActivityPage />
   else if (route.page === 'trash') content = <TrashPage />
+  else if (route.page === 'userDetail') content = <UserDetailPage key={route.id} userId={route.id} />
   else content = <UsersPage />
 
   const closeDetails = () => dispatch(uiActions.setDetailsOpen(false))

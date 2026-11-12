@@ -22,28 +22,8 @@ import type {
   WorkspaceColor,
   WorkspaceRole,
 } from '@/types/drive'
-import type { LogoutResponseDto, MeDto, RefreshRequestDto, RefreshResponseDto } from '@/types/auth'
-import type { PageQuery, Paginated, RbacPermissionDto, RbacRoleDto } from '@/types/rbac'
-import type { UserDto, UserListQuery } from '@/types/user'
 
 /* --------------------------------- Inputs --------------------------------- */
-
-export interface LoginInput {
-  email: string
-  password: string
-  /** true → backend memberi refresh token berumur panjang. */
-  rememberMe: boolean
-}
-
-export interface LoginResponse {
-  /** JWT untuk header `Authorization: Bearer …`. */
-  accessToken: string
-  refreshToken: string | null
-  tokenType: string
-  /** Umur access token (detik). */
-  expiresIn: number
-  user: User
-}
 
 export interface ActivityQuery {
   /** Hanya log dengan `at` >= nilai ini (ISO 8601) — untuk sinkronisasi inkremental. */
@@ -89,25 +69,7 @@ export interface DownloadInfo {
 /* ---------------------------------- API ---------------------------------- */
 
 export interface DriveApi {
-  // Autentikasi
-  login(input: LoginInput): Promise<LoginResponse>
-  /** POST /auth/logout — mencabut token di server; mengembalikan pesan dari backend. */
-  logout(): Promise<LogoutResponseDto>
-  /** POST /auth/refresh — tukar refresh token dengan access token baru. */
-  refreshToken(input: RefreshRequestDto): Promise<RefreshResponseDto>
-  /** GET /auth/me — profil + roles/permissions user aktif (respons mentah). */
-  getMe(): Promise<MeDto>
-
-  // RBAC
-  /** GET /rbac/roles?page=&per_page=&search= — semua peran + izinnya. */
-  listRoles(query: PageQuery): Promise<Paginated<RbacRoleDto>>
-  /** GET /rbac/permissions?page=&per_page=&search= — semua izin sistem. */
-  listPermissions(query: PageQuery): Promise<Paginated<RbacPermissionDto>>
-
-  // Data awal / sinkronisasi
-  listUsers(): Promise<User[]>
-  /** GET /users?page=&per_page=&search=&status=&role= — daftar pengguna berpaginasi (respons mentah). */
-  listUsersPaged(query: UserListQuery): Promise<Paginated<UserDto>>
+  // Data awal / sinkronisasi (endpoint auth, RBAC & users → action Redux di src/features)
   /** Semua node (workspace, folder, file — termasuk yang di sampah) yang dapat diakses aktor. */
   listNodes(): Promise<DriveNode[]>
   listActivity(query?: ActivityQuery): Promise<ActivityLog[]>

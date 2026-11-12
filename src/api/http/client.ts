@@ -1,7 +1,6 @@
 import { ApiError, type ApiErrorCode } from '../contract'
 import { isTokenExpired } from '@/lib/jwt'
 import { getAuthToken, getRefreshToken } from '../token'
-import type { Paginated } from '@/types/rbac'
 
 type Query = Record<string, string | number | undefined>
 
@@ -27,8 +26,6 @@ interface RequestOptions {
   form?: FormData
   /** true → jangan coba refresh token saat 401 (dipakai endpoint auth). */
   skipRefresh?: boolean
-  /** true → kembalikan `{ data, meta }` (list berpaginasi), bukan hanya `data`. */
-  withMeta?: boolean
 }
 
 /** Bentuk respons sukses backend: `{ status, success_code, data }`. */
@@ -57,8 +54,11 @@ export function setRefreshHandler(handler: RefreshHandler | null) {
   refreshHandler = handler
 }
 
-/** Single-flight: banyak request yang butuh refresh bersamaan hanya memicu satu `POST /auth/refresh`. */
-function refreshAccessToken(): Promise<boolean> {
+/**
+ * Single-flight: banyak request yang butuh refresh bersamaan hanya memicu satu `POST /auth/refresh`.
+ * Dipakai oleh fetch client ini dan interceptor axios (`src/api/axios.ts`).
+ */
+export function refreshAccessToken(): Promise<boolean> {
   if (!refreshHandler || !getRefreshToken()) return Promise.resolve(false)
   refreshing ??= refreshHandler()
     .catch(() => false)
@@ -128,17 +128,11 @@ export function createHttpClient(baseUrl: string) {
     }
     if (res.status === 204) return undefined as T
     const json = (await res.json().catch(() => undefined)) as unknown
-    if (opts.withMeta) {
-      const body = (json ?? {}) as { data?: unknown; meta?: unknown }
-      return convertKeys({ data: body.data ?? [], meta: body.meta ?? {} }, toCamelKey) as T
-    }
     return convertKeys(isEnvelope(json) ? json.data : json, toCamelKey) as T
   }
 
   return {
     get: <T>(path: string, query?: Query) => request<T>('GET', path, { query }),
-    /** GET list berpaginasi → `{ data, meta }`. */
-    getPage: <T>(path: string, query?: Query) => request<Paginated<T>>('GET', path, { query, withMeta: true }),
     post: <T>(path: string, json?: unknown, opts?: Pick<RequestOptions, 'skipRefresh'>) =>
       request<T>('POST', path, { json: json ?? {}, ...opts }),
     postForm: <T>(path: string, form: FormData) => request<T>('POST', path, { form }),
